@@ -1,0 +1,65 @@
+{
+  "ground": {
+    "slug": "rock_ground",
+    "tileMeters": 4,
+    "files": {
+      "diff": "ground/diff.jpg",
+      "nor": "ground/nor.jpg",
+      "rough": "ground/rough.jpg"
+    }
+  },
+  "asphalt": {
+    "slug": "asphalt_02",
+    "tileMeters": 3,
+    "files": {
+      "diff": "asphalt/diff.jpg",
+      "nor": "asphalt/nor.jpg",
+      "rough": "asphalt/rough.jpg"
+    }
+  },
+  "concrete": {
+    "slug": "concrete_wall_007",
+    "tileMeters": 2,
+    "files": {
+      "diff": "concrete/diff.jpg",
+      "nor": "concrete/nor.jpg",
+      "rough": "concrete/rough.jpg"
+    }
+  },
+  "metal": {
+    "slug": "worn_corrugated_iron",
+    "tileMeters": 1.5,
+    "files": {
+      "diff": "metal/diff.jpg",
+      "nor": "metal/nor.jpg",
+      "rough": "metal/rough.jpg"
+    }
+  },
+  "wood": {
+    "slug": "weathered_planks",
+    "tileMeters": 1.5,
+    "files": {
+      "diff": "wood/diff.jpg",
+      "nor": "wood/nor.jpg",
+      "rough": "wood/rough.jpg"
+    }
+  },
+  "rock": {
+    "slug": "rock_face_03",
+    "tileMeters": 4,
+    "files": {
+      "diff": "rock/diff.jpg",
+      "nor": "rock/nor.jpg",
+      "rough": "rock/rough.jpg"
+    }
+  },
+  "bark": {
+    "slug": "bark_brown_01",
+    "tileMeters": 1.5,
+    "files": {
+      "diff": "bark/diff.jpg",
+      "nor": "bark/nor.jpg",
+      "rough": "bark/rough.jpg"
+    }
+  }
+}

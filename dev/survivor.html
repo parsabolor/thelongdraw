@@ -1,0 +1,100 @@
+<!doctype html>
+<meta charset="utf-8"><title>survivor rig</title>
+<style>html,body{margin:0;height:100%;background:#2a2f35;overflow:hidden}canvas{display:block}#t{position:fixed;left:8px;top:6px;color:#cde;font:12px monospace}</style>
+<script type="importmap">
+{ "imports": {
+    "three": "/node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "/node_modules/three/build/three.webgpu.js",
+    "three/tsl": "/node_modules/three/build/three.tsl.js",
+    "three/addons/": "/node_modules/three/examples/jsm/"
+} }
+</script>
+<div id="t"></div>
+<script type="module">
+// Dev tool: /dev/survivor.html?pose=idle|walk|run|crouch|cwalk&phases=0,0.25,0.5,0.75&view=side|front|back|three&weights=1&bones=1&cx=0&cy=0.95&h=1.2
+// One survivor per entry of `phases` (fractions of the gait cycle), side by side, rigged by src/survivor.js. Sets window.__survivor when drawn.
+//   anim=0.1: time-stepped (the springs run): figure i shows the motion i x 0.1 s after the first; phases only sets how many figures.
+//   held=1: the bow in the left hand and the machete on the hip; swing=0..1[,0..1,...]: freeze the stab at those points, one per figure (the knife is then in the right hand).
+//   bowtilt, bowcant, ...: override HELD numbers (src/held.js).
+//   down, shoulder: override ARMS.down / ARMS.shoulder (rad).
+//   weights=1: colour the mesh by its dominant bones. bones=1: draw the skeleton. cx, cy, h: orthographic view centre (m) and half-height.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { createSurvivorFigure, BONES, ARMS, CROUCH } from '../src/survivor.js';
+import { loadBowAssets, createHeldBow } from '../src/bow.js';
+import { loadProps, cloneProp } from '../src/models.js';
+import { attachHeld, HELD } from '../src/held.js';
+
+const q = new URLSearchParams(location.search), view = q.get('view') || 'side', pose = q.get('pose') || 'idle';
+if (q.get('down')) ARMS.down = +q.get('down'); // &down=0.4: how far the arms are brought in from the model's A-pose (rad), &shoulder=0.1: how much of that the clavicle takes
+if (q.get('shoulder')) ARMS.shoulder = +q.get('shoulder');
+if (q.get('crouch')) Object.assign(CROUCH, Object.fromEntries(q.get('crouch').split(',').map((v, i) => [['hip', 'knee', 'lean', 'tilt'][i], +v]))); // &crouch=hip,knee,lean,tilt (rad)
+const phases = (q.get('phases') || '0').split(',').map(Number), TAU = Math.PI * 2;
+for (const k of ['bowTilt', 'bowCant', 'sheathPitch']) if (q.get(k.toLowerCase())) HELD[k] = +q.get(k.toLowerCase());
+const P = { idle: { speed: 0 }, walk: { speed: 2.2 }, run: { speed: 4.2 }, crouch: { speed: 0, crouch: true }, cwalk: { speed: 1.2, crouch: true }, attack: { speed: 0, attacking: true } }[pose];
+if (q.get('held')) P.hold = true;
+const swings = (q.get('swing') || '').split(',').filter(Boolean).map(Number); // swing=0,0.1,0.2: figure i is at that point of the stab (one value: all of them)
+const renderer = new THREE.WebGPURenderer({ antialias: true }); await renderer.init();
+renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2a2f35);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 1.8)); const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(3, 5, 4); scene.add(sun);
+scene.add(new THREE.GridHelper(40, 80, 0x889099, 0x39414a));
+try {
+  const root = await new FBXLoader().loadAsync('../assets/models/game/survivor.fbx');
+  const tl = new THREE.TextureLoader(), tex = (f, srgb) => { const t = tl.load('../assets/models/game/' + f); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+  root.traverse((o) => { if (o.isCamera) o.removeFromParent(); });
+  root.traverse((o) => { if (o.isMesh) { const n = o.name.toLowerCase(); o.material = new THREE.MeshStandardMaterial({ map: tex(`survivor_${n}_albedo.jpg`, true), normalMap: tex(`survivor_${n}_normal.jpg`, false), roughness: 0.8 }); } });
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root), size = box.getSize(new THREE.Vector3());
+  const entry = { role: 'player', scene: root, clips: [], scale: 1.82 / size.y, min: box.min, center: box.getCenter(new THREE.Vector3()), tris: 47099 };
+  const bowA = q.get('held') ? await loadBowAssets() : null, props = q.get('held') ? await loadProps() : {};
+  const figs = phases.map((ph, i) => {
+    const fig = createSurvivorFigure(entry, { height: 1.82 });
+    const Pi = swings.length ? { ...P, swing: swings[Math.min(i, swings.length - 1)] } : P;
+    for (let k = 0; k < 120; k++) fig.update(1 / 60, P); // let the smoothing settle
+    if (q.get('anim')) { for (let k = 0; k < Math.round(i * +q.get('anim') * 60); k++) fig.update(1 / 60, P); } // anim=0.1: figure i is i x 0.1 s further into ONE continuous time-stepped animation
+    else { fig.state.ph = (ph % 1) * TAU; fig.update(0, Pi); }
+    const step = +q.get('gap') || 1.15; // spacing along the screen's horizontal axis (gap=2 for a stab, whose reach crosses the neighbour)
+    if (view === 'side') fig.root.position.z = -i * step; else fig.root.position.x = i * step;
+    if (q.get('held')) fig.held = attachHeld(fig, { bow: bowA && createHeldBow(bowA), knife: props.knife && cloneProp(props.knife) });
+    if (swings.length && fig.held) fig.held.swing(true);
+    scene.add(fig.root);
+    return fig;
+  });
+  if (q.get('weights')) {
+    const col = BONES.map((b, i) => new THREE.Color().setHSL((i * 0.381966) % 1, 0.9, 0.5 + 0.12 * (i % 2)));
+    const g = new Map(), mat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    for (const f of figs) for (const m of f.meshes) {
+      if (!g.has(m.geometry)) {
+        const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, n = si.count, c = new Float32Array(n * 3);
+        for (let v = 0; v < n; v++) for (let k = 0; k < 4; k++) { const w = sw.getComponent(v, k), cc = col[si.getComponent(v, k)]; c[3 * v] += w * cc.r; c[3 * v + 1] += w * cc.g; c[3 * v + 2] += w * cc.b; }
+        m.geometry.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.set(m.geometry, 1);
+      }
+      m.material = mat;
+    }
+  }
+  const lines = [];
+  if (q.get('bones')) for (const f of figs) {
+    const l = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false })); l.renderOrder = 9; l.frustumCulled = false;
+    l.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BONES.length * 6), 3)); scene.add(l); lines.push([l, f]);
+  }
+  const aspect = innerWidth / innerHeight, h = +q.get('h') || 1.2, cy = q.get('cy') === null ? 0.95 : +q.get('cy');
+  const cx = q.get('cx') === null ? (figs.length - 1) * 0.575 : +q.get('cx');
+  const cam = new THREE.OrthographicCamera(-h * aspect, h * aspect, h, -h, 0.01, 50);
+  if (view === 'side') { cam.position.set(10, cy, -cx); cam.lookAt(0, cy, -cx); }
+  else if (view === 'back') { cam.position.set(cx, cy, -10); cam.lookAt(cx, cy, 0); cam.up.set(0, 1, 0); }
+  else if (view === 'three') { const d = new THREE.Vector3(1, 0.25, 1).normalize(); cam.position.set(cx, cy, 0).addScaledVector(d, 10); cam.lookAt(cx, cy, 0); }
+  else { cam.position.set(cx, cy, 10); cam.lookAt(cx, cy, 0); }
+  const tmp = new THREE.Vector3(), draw = () => {
+    for (const [l, f] of lines) {
+      f.root.updateMatrixWorld(true); const a = l.geometry.attributes.position.array;
+      BONES.forEach((b, i) => { const bone = f.bones[b.name], par = b.parent ? f.bones[b.parent] : bone; par.getWorldPosition(tmp); a.set(tmp.toArray(), 6 * i); bone.getWorldPosition(tmp); a.set(tmp.toArray(), 6 * i + 3); });
+      l.geometry.attributes.position.needsUpdate = true;
+    }
+    renderer.render(scene, cam);
+  };
+  draw(); document.getElementById('t').textContent = `${pose} ${view} phases ${phases.join(',')}`;
+  await new Promise((res) => setTimeout(res, 1500)); draw(); // textures arrive after the first draw
+  window.__survivor = { ok: true, tris: entry.tris, bones: BONES.length, figs };
+} catch (e) { window.__survivor = { error: String(e && e.stack || e) }; document.getElementById('t').textContent = 'ERROR ' + e; }
+</script>

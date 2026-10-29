@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio test</title>
+<style>
+  :root { --bg: #14161a; --fg: #d9dde3; --dim: #8b929c; --line: #2a2e35; --btn: #20242b; --acc: #e0a23a; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f5f7; --fg: #1d2025; --dim: #626a75; --line: #d3d7dd; --btn: #e6e9ee; --acc: #b3710c; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 ui-monospace, Menlo, monospace; }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+  button { background: var(--btn); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--acc); }
+  .grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  #stats { color: var(--dim); }
+  pre { background: var(--btn); border: 1px solid var(--line); padding: 10px; overflow: auto; max-height: 60vh; }
+</style>
+</head>
+<body>
+<h1>The Long Draw: audio test bench</h1>
+<div class="bar">
+  <button id="start">Start audio</button>
+  <label>volume <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+  <label><input id="mute" type="checkbox"> mute</label>
+  <label><input id="amb" type="checkbox" checked> ambient</label>
+  <button id="stop">Stop all</button>
+  <button id="run">Run all tests</button>
+  <span id="stats"></span>
+</div>
+<div class="grid" id="grid"></div>
+<pre id="out">Press Start audio, then any sound button. "Run all tests" runs the numeric checks.</pre>
+
+<script type="module">
+import { createAudio } from '../src/audio.js';
+
+const audio = createAudio();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const errors = [];
+addEventListener('error', (e) => errors.push(String(e.message)));
+addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)));
+
+// ---- fake sim state, driven by a fixed 16 ms timer so it works headless
+const S = { t: 0, events: [], player: { x: 0, y: 0, z: 0, drawing: false, drawT: 0, crouch: false, run: false, moving: false, hp: 100 }, zombies: [], threat: { dist: Infinity, count: 0 }, status: 'UNSEEN', bell: { x: 0.5, y: 3.2, z: 0.5, ring: false } };
+const listener = { x: 0, y: 1.6, z: 0, fx: 0, fy: 0, fz: -1 };
+const cpu = { n: 0, total: 0, max: 0 };
+const resetState = () => { S.player.drawing = false; S.player.drawT = 0; S.zombies = [Z(7, 'hunter', 'dormant', 4, -8)]; S.threat = { dist: Infinity, count: 0 }; S.status = 'UNSEEN'; S.events.length = 0; };
+function Z(id, kind, state, x, z) { return { id, kind, state, x, y: 0, z }; }
+setInterval(() => {
+  const dt = 0.016; S.t += dt;
+  if (S.player.drawing) S.player.drawT += dt;
+  const t0 = performance.now();
+  audio.update(S, S.events, dt, listener);
+  const ms = performance.now() - t0; cpu.n++; cpu.total += ms; cpu.max = Math.max(cpu.max, ms);
+  S.events.length = 0;
+}, 16);
+
+// ---- sound catalogue: name -> { run(), win (ms to watch) }
+const FRONT = { x: 3, y: 1.2, z: -6 }; // about 6.7 m ahead and to the right
+const noise = (kind, tag, loud, src = 'zombie', pos = FRONT) => () => S.events.push({ type: 'noise', kind, tag, loud, src, range: loud * 60, t: S.t, ...pos });
+const ev = (e) => () => S.events.push(e);
+const SOUNDS = {
+  step_grass: { run: noise('step', 'grass', 0.35) }, step_dirt: { run: noise('step', 'dirt', 0.35) }, step_rock: { run: noise('step', 'rock', 0.35) },
+  step_asphalt: { run: noise('step', 'asphalt', 0.35) }, step_concrete: { run: noise('step', 'concrete', 0.35) }, step_metal: { run: noise('step', 'metal', 0.35) },
+  step_wood: { run: noise('step', 'wood', 0.35) },
+  step_crouch_own: { run: noise('step', 'dirt', 0.05, 'player', { x: 0, y: 0.6, z: 0 }) },
+  release: { run: noise('release', 'x', 0.25, 'player', { x: 0, y: 0.6, z: 0 }) },
+  draw_creak: { run: () => { S.player.drawing = true; S.player.drawT = 0; setTimeout(() => { S.player.drawing = false; }, 1700); }, win: 1700 },
+  draw_full_tick: { run: () => { S.player.drawing = true; S.player.drawT = 1.19; setTimeout(() => { S.player.drawing = false; }, 300); }, win: 500 },
+  impact_dirt: { run: noise('impact', 'dirt', 0.35, 'arrow') }, impact_grass: { run: noise('impact', 'grass', 0.35, 'arrow') }, impact_rock: { run: noise('impact', 'rock', 0.6, 'arrow') },
+  impact_concrete: { run: noise('impact', 'concrete', 0.6, 'arrow') }, impact_metal: { run: noise('impact', 'metal', 0.8, 'arrow') }, impact_wood: { run: noise('impact', 'wood', 0.35, 'arrow') },
+  impact_flesh: { run: noise('impact', 'flesh', 0.35, 'arrow') },
+  whistle: { run: () => { for (let i = 0; i < 8; i++) setTimeout(() => S.events.push({ type: 'noise', kind: 'whistle', loud: 0.4, src: 'arrow', range: 24, t: S.t, x: -10 + i * 1.8, y: 1.5, z: -20 + i * 2 }), i * 100); }, win: 1000 },
+  fall: { run: noise('fall', 'x', 0.1) }, wound: { run: noise('wound', 'x', 0.9) }, scream: { run: noise('scream', 'x', 1, 'zombie', { x: 6, y: 1.6, z: -18 }), win: 1500 },
+  call: { run: noise('call', 'x', 0.5, 'zombie', { x: -5, y: 1.6, z: -20 }), win: 1500 }, rummage: { run: noise('rummage', 'x', 0.08, 'world', { x: 1, y: 1, z: -3 }) },
+  land: { run: noise('land', 'x', 0.36, 'player', { x: 0, y: 0, z: 0 }) },
+  shot_event_only: { run: ev({ type: 'shot', id: 1, kind: 'basic' }), silent: true }, stick_event_only: { run: ev({ type: 'stick', id: 1, tag: 'dirt' }), silent: true },
+  retrieve: { run: ev({ type: 'retrieve', id: 1 }) },
+  kill_head: { run: ev({ type: 'kill', id: 7, how: 'head' }) }, kill_body: { run: ev({ type: 'kill', id: 7, how: 'body' }) }, kill_knife: { run: ev({ type: 'kill', id: 7, how: 'knife' }) },
+  wake: { run: ev({ type: 'wake', id: 7 }), win: 1200 },
+  alert_roar: { run: ev({ type: 'alert', id: 7, x: 4, y: 1.4, z: -8 }), win: 1500 },
+  state_alert_roar: { run: () => S.events.push({ type: 'state', id: 7, from: 'idle', to: 'alert' }), win: 1500 },
+  hit: { run: ev({ type: 'hit', id: 7 }) }, blown: { run: ev({ type: 'blown' }), win: 1200 }, swarmed: { run: ev({ type: 'swarmed' }) },
+  tag: { run: ev({ type: 'tag', id: 7 }) },
+  bell: { run: ev({ type: 'bell' }), win: 1500 },
+  over_dead: { run: ev({ type: 'over', result: 'dead' }), win: 1500 }, over_cleared: { run: ev({ type: 'over', result: 'cleared' }), win: 1500 },
+  groan_idle_to_search: { run: () => { S.zombies[0].state = 'search'; }, win: 3500, prime: true },
+  growl_alert: { run: () => { S.zombies[0].state = 'alert'; }, win: 3500, prime: true },
+  cricket_group: { run: () => audio._cricket(), win: 2500 },
+};
+
+async function measure(win) {
+  let peak = 0, rms = 0, voices = 0, bad = false;
+  const t0 = performance.now();
+  while (performance.now() - t0 < win) {
+    const s = audio.stats();
+    if (!(s.peak <= 1e6) || !(s.rms <= 1e6)) bad = true;
+    peak = Math.max(peak, s.peak || 0); rms = Math.max(rms, s.rms || 0); voices = Math.max(voices, s.voices);
+    await sleep(8);
+  }
+  return { peak, rms, voices, bad };
+}
+async function fire(name) {
+  const s = SOUNDS[name];
+  if (s.prime) { S.zombies[0].state = 'idle'; await sleep(60); } // let the zombie be seen idle first, then change its state
+  s.run();
+  return measure(s.win || 700);
+}
+async function clean() { audio.stopAll(); resetState(); S.player.drawing = false; await sleep(200); }
+
+// ---- the full numeric run
+async function runAll() {
+  const R = { rows: [], checks: [], notes: {} };
+  const check = (name, ok, detail) => R.checks.push({ name, ok: !!ok, detail });
+  await audio.resume(); await sleep(400);
+  audio.setVolume(0.8); audio.setMuted(false);
+  check('context running', audio.stats().state === 'running', audio.stats().state);
+
+  // 1. night ambience alone
+  resetState(); audio.setAmbient(true); await sleep(800);
+  const amb = await measure(3000);
+  R.notes.ambience = { peak: +amb.peak.toFixed(4), rms: +amb.rms.toFixed(4) };
+  check('ambience audible but quiet', amb.rms > 0.002 && amb.peak < 0.5, JSON.stringify(R.notes.ambience));
+  audio.setAmbient(false); await sleep(500);
+
+  // 2. every sound, one by one, ambient off
+  for (const name of Object.keys(SOUNDS)) {
+    await clean();
+    if (name === 'cricket_group') audio.setAmbient(false);
+    const base = (await measure(60)).peak;
+    const m = await fire(name);
+    R.rows.push({ name, peak: +m.peak.toFixed(3), rms: +m.rms.toFixed(4), voices: m.voices, base: +base.toFixed(4) });
+    if (SOUNDS[name].silent) check(name + ' makes no sound', m.peak < 0.01, 'peak ' + m.peak.toFixed(4));
+    else check(name + ' audible and not clipping', m.peak > 0.01 && m.peak < 1 && !m.bad, `peak ${m.peak.toFixed(3)} rms ${m.rms.toFixed(4)}`);
+    if (name === 'draw_full_tick') check('draw_full_tick: nock + tick voices spawned', m.voices >= 2, 'voices ' + m.voices);
+  }
+
+  // 3. left/right: a sound 12 m to the left must be louder in the left channel
+  await clean();
+  const ac = audio.analyser.context, split = ac.createChannelSplitter(2), aL = ac.createAnalyser(), aR = ac.createAnalyser();
+  audio.analyser.connect(split); split.connect(aL, 0); split.connect(aR, 1);
+  const bufL = new Float32Array(aL.fftSize), bufR = new Float32Array(aR.fftSize);
+  const lr = async (x) => {
+    await clean();
+    S.events.push({ type: 'noise', kind: 'impact', tag: 'metal', loud: 1, src: 'arrow', range: 60, t: S.t, x, y: 1.6, z: 0 });
+    let l = 0, r = 0; const t0 = performance.now();
+    while (performance.now() - t0 < 600) {
+      aL.getFloatTimeDomainData(bufL); aR.getFloatTimeDomainData(bufR);
+      l = Math.max(l, Math.sqrt(bufL.reduce((a, b) => a + b * b, 0) / bufL.length)); r = Math.max(r, Math.sqrt(bufR.reduce((a, b) => a + b * b, 0) / bufR.length));
+      await sleep(8);
+    }
+    return { l, r };
+  };
+  const left = await lr(-12), right = await lr(12);
+  R.notes.leftRight = { left: { L: +left.l.toFixed(4), R: +left.r.toFixed(4) }, right: { L: +right.l.toFixed(4), R: +right.r.toFixed(4) } };
+  check('source at x=-12 louder in left channel', left.l > left.r * 2, JSON.stringify(R.notes.leftRight.left));
+  check('source at x=+12 louder in right channel', right.r > right.l * 2, JSON.stringify(R.notes.leftRight.right));
+  // turning the listener 90 degrees right (facing east) puts the x=-12 source behind: it must be centred-ish, not left
+  listener.fx = 1; listener.fz = 0;
+  const behindL = await lr(-12);
+  listener.fx = 0; listener.fz = -1;
+  R.notes.facingEastSourceWest = { L: +behindL.l.toFixed(4), R: +behindL.r.toFixed(4) };
+  check('facing east, a source to the west is behind (not strongly left)', behindL.l < behindL.r * 2.5, JSON.stringify(R.notes.facingEastSourceWest));
+
+  // 4. heartbeat: tempo and fade
+  await clean(); audio.setAmbient(false);
+  const countBeats = async (secs) => {
+    const xs = [], ts = [], t0 = performance.now();
+    while (performance.now() - t0 < secs * 1000) { xs.push(audio.stats().rms); ts.push(performance.now() - t0); await sleep(6); }
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length, mx = Math.max(...xs), thr = mean + 0.5 * (mx - mean);
+    let beats = 0, last = -1e9;
+    for (let i = 0; i < xs.length; i++) if (xs[i] > thr && ts[i] - last > 300) { beats++; last = ts[i]; }
+    return { bpm: Math.round((beats / secs) * 60), mx: +mx.toFixed(3) };
+  };
+  S.threat = { dist: 44, count: 1 }; S.status = 'UNSEEN'; await sleep(2500);
+  const far = await countBeats(5);
+  S.threat = { dist: 5, count: 1 }; S.status = 'HUNTED'; await sleep(2800);
+  const close = await countBeats(5);
+  R.notes.heartbeat = { 'dist44': far, 'dist5': close };
+  check('heartbeat at 44 m is slow (about 70 BPM)', far.bpm >= 55 && far.bpm <= 90 && far.mx > 0.01, JSON.stringify(far));
+  check('heartbeat at 5 m is fast (about 140 BPM)', close.bpm >= 110 && close.bpm <= 160 && close.mx > 0.02, JSON.stringify(close));
+  S.threat = { dist: Infinity, count: 0 }; S.status = 'UNSEEN';
+  await sleep(300); const f1 = (await measure(300)).rms;
+  await sleep(5500); const f2 = (await measure(300)).rms;
+  R.notes.heartFade = { at0_3s: +f1.toFixed(4), at6s: +f2.toFixed(4) };
+  check('heartbeat fades out smoothly after the threat is gone', f1 > f2 * 3 && f2 < 0.004, JSON.stringify(R.notes.heartFade));
+
+  // 5. stress: 120 events at once, then 4 s of everything, loud and close; cap and clipping
+  await clean(); audio.setAmbient(true); audio.setVolume(1); cpu.n = 0; cpu.total = 0; cpu.max = 0;
+  S.zombies = Array.from({ length: 12 }, (_, i) => Z(100 + i, 'hunter', 'alert', -6 + i, -3 - (i % 4) * 2));
+  S.threat = { dist: 4, count: 12 }; S.status = 'HUNTED'; S.player.drawing = true;
+  const kinds = [['step', 'metal'], ['impact', 'metal'], ['wound', 'x'], ['scream', 'x'], ['call', 'x'], ['release', 'x'], ['fall', 'x'], ['impact', 'flesh'], ['rummage', 'x'], ['land', 'x'], ['whistle', 'x']];
+  for (let i = 0; i < 120; i++) { const [k, tg] = kinds[i % kinds.length]; S.events.push({ type: 'noise', kind: k, tag: tg, loud: 1, src: 'zombie', range: 60, t: S.t, x: rnd(-3, 3), y: 1.4, z: rnd(-3, 3) }); }
+  S.events.push({ type: 'bell' }, { type: 'hit', id: 100 }, { type: 'blown' }, { type: 'swarmed' }, { type: 'over', result: 'dead' }, { type: 'alert', id: 100, x: 1, y: 1.4, z: -2 });
+  const stress = await measure(4000);
+  const st = audio.stats();
+  R.notes.stress = { peak: +stress.peak.toFixed(3), maxVoices: stress.voices, updateMsAvg: +(cpu.total / cpu.n).toFixed(3), updateMsMax: +cpu.max.toFixed(2), errors: st.errors };
+  check('stress: peak below 1.0 at volume 1.0', stress.peak < 1 && stress.peak > 0.2 && !stress.bad, 'peak ' + stress.peak.toFixed(3));
+  check('stress: voices capped at 24', stress.voices <= 24, 'max voices ' + stress.voices);
+  check('stress: update stays cheap (avg < 1 ms)', cpu.total / cpu.n < 1, 'avg ' + (cpu.total / cpu.n).toFixed(3) + ' ms');
+  audio.setVolume(0.8); await clean();
+
+  // 5b. the same event array handed over twice must not play twice
+  await clean(); S.events.length = 0;
+  const dup = [{ type: 'tag', id: 7 }];
+  audio.update(S, dup, 0.016, listener); const d1 = audio.stats().voices; audio.update(S, dup, 0.016, listener); const d2 = audio.stats().voices;
+  check('same events array twice plays once', d1 === 1 && d2 === 1, `voices ${d1} then ${d2}`);
+
+  // 6. mute
+  S.events.push({ type: 'noise', kind: 'impact', tag: 'metal', loud: 1, src: 'arrow', range: 60, t: S.t, ...FRONT });
+  audio.setMuted(true); await sleep(250); const mu = await measure(300);
+  audio.setMuted(false);
+  check('mute silences output', mu.peak < 0.002, 'peak ' + mu.peak.toFixed(4));
+
+  check('no exceptions or NaN', errors.length === 0 && audio.stats().errors === 0, JSON.stringify(errors.slice(0, 3)) + ' audioErrors ' + audio.stats().errors);
+  R.ok = R.checks.every((c) => c.ok);
+  return R;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+// ---- UI
+const grid = document.getElementById('grid'), out = document.getElementById('out');
+for (const name of Object.keys(SOUNDS)) {
+  const b = document.createElement('button'); b.textContent = name; b.onclick = async () => { await audio.resume(); resetState(); SOUNDS[name].run(); };
+  grid.appendChild(b);
+}
+document.getElementById('start').onclick = () => audio.resume();
+document.getElementById('stop').onclick = () => { audio.stopAll(); resetState(); };
+document.getElementById('vol').oninput = (e) => audio.setVolume(+e.target.value);
+document.getElementById('mute').onchange = (e) => audio.setMuted(e.target.checked);
+document.getElementById('amb').onchange = (e) => audio.setAmbient(e.target.checked);
+document.getElementById('run').onclick = async () => { out.textContent = 'running...'; out.textContent = JSON.stringify(await runAll(), null, 1); };
+setInterval(() => { const s = audio.stats(); document.getElementById('stats').textContent = `${s.state} voices ${s.voices} rms ${s.rms.toFixed(3)} peak ${s.peak.toFixed(3)}`; }, 250);
+
+resetState();
+window.test = { audio, S, listener, SOUNDS, fire, measure, runAll, resetState, clean, errors, cpu, names: () => Object.keys(SOUNDS) };
+</script>
+</body>
+</html>

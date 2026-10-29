@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Long Draw: Outpost Prototype</title>
+<style>
+  :root { --fg:#e8ecef; --dim:#9aa5ad; --warn:#f2c14e; --bad:#e5584f; --ok:#6fbf73; --bg:rgba(12,16,20,.62); }
+  html,body { margin:0; height:100%; background:#10151a; color:var(--fg); font:13px/1.35 ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+  canvas#view { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .panel { position:fixed; background:var(--bg); padding:8px 10px; border-radius:6px; pointer-events:none; }
+  #cross { position:fixed; left:50%; top:50%; width:22px; height:22px; margin:-11px 0 0 -11px; pointer-events:none; opacity:.9; }
+  #cross::before,#cross::after { content:""; position:absolute; background:var(--fg); }
+  #cross::before { left:10px; top:0; width:2px; height:22px; }
+  #cross::after  { top:10px; left:0; height:2px; width:22px; }
+  #range { position:fixed; left:50%; top:calc(50% + 22px); transform:translateX(-50%); color:var(--fg); text-shadow:0 0 4px #000; pointer-events:none; }
+  #stats { left:12px; bottom:12px; min-width:210px; }
+  #stats div { display:flex; justify-content:space-between; gap:12px; }
+  .bar { height:6px; background:#2a323a; border-radius:3px; overflow:hidden; margin:3px 0 6px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--fg); }
+  #hp > i { background:var(--ok); }
+  #status { right:12px; bottom:12px; text-align:right; }
+  #status b { font-weight:600; }
+  #toast { left:50%; top:14%; transform:translateX(-50%); text-align:center; opacity:0; transition:opacity .25s; }
+  #badge { left:12px; top:12px; color:var(--dim); }
+  #help { left:12px; top:44px; color:var(--dim); white-space:pre; }
+  #mini { position:fixed; right:12px; top:12px; width:240px; height:240px; border-radius:6px; background:var(--bg); }
+  #screen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(8,11,14,.72); text-align:center; }
+  #screen > div { max-width:560px; padding:24px 28px; background:#161d23; border-radius:8px; }
+  #screen h1 { margin:0 0 8px; font-size:20px; }
+  #screen p { color:var(--dim); margin:6px 0; }
+  #screen pre { text-align:left; display:inline-block; color:var(--fg); margin:10px 0 0; }
+  .hidden { display:none !important; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "./node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "./node_modules/three/build/three.webgpu.js",
+    "three/tsl": "./node_modules/three/build/three.tsl.js",
+    "three/addons/": "./node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="cross"></div>
+<div id="range"></div>
+<canvas id="mini" width="480" height="480"></canvas>
+<div id="badge" class="panel">starting…</div>
+<div id="help" class="panel"></div>
+<div id="stats" class="panel">
+  <div><span>HP</span><span id="hpn"></span></div><div class="bar" id="hp"><i></i></div>
+  <div><span>Draw</span><span id="drawn"></span></div><div class="bar" id="draw"><i></i></div>
+  <div><span id="arrowname">Arrow</span><span id="quiver"></span></div>
+  <div id="knifeRow"><span>Knife [F]</span><span id="knife"></span></div>
+  <div><span>Zombies left</span><span id="left"></span></div>
+</div>
+<div id="status" class="panel"></div>
+<div id="toast" class="panel"></div>
+<div id="screen">
+  <div id="screenbody">
+    <h1>The Long Draw: Outpost Prototype</h1>
+    <p>Clear the outpost with planned shots. The dead hunt by sound.</p>
+    <p id="loadmsg">Loading renderer…</p>
+  </div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

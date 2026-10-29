@@ -1,0 +1,16 @@
+# dependencies (npm install)
+node_modules/
+
+# Third-party art that came as downloads with licences that were never verified: kept out of the public repo (see README, "Art and licences").
+# The game runs without it (procedural stand-ins); tools/prep-*.mjs rebuild the processed files from the original downloads if you have them.
+assets/models/incoming/
+assets/models/candidates/
+assets/models/game/
+assets/models/credits.txt
+assets/world/
+
+# scratch and OS files
+.DS_Store
+*.log
+*.tgz
+eval-out/

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Materials test</title>
+<style>
+  html,body { margin:0; height:100%; background:#05070c; overflow:hidden; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #msg { position:fixed; left:8px; top:8px; color:#9aa5ad; font:12px ui-monospace,Menlo,monospace; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "../node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "../node_modules/three/build/three.webgpu.js",
+    "three/tsl": "../node_modules/three/build/three.tsl.js",
+    "three/addons/": "../node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="msg">loading...</div>
+<script type="module">
+// Row of boxes (boxUV) + large terrain plane + road strip, lit like the game will be: dim moon + a warm point light.
+import * as THREE from 'three';
+import { loadMaterials, boxUV } from '../src/materials.js';
+
+const renderer = new THREE.WebGPURenderer({ canvas: document.getElementById('view'), antialias: true });
+await renderer.init();
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060a14);
+scene.fog = new THREE.FogExp2(0x0a1020, 0.018);
+
+const moon = new THREE.DirectionalLight(0x9fb4ff, 1.6);
+moon.position.set(-14, 24, 18);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048, 2048);
+Object.assign(moon.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, near: 1, far: 80 });
+scene.add(moon);
+scene.add(new THREE.HemisphereLight(0x2a3a66, 0x14110e, 0.5));
+const lamp = new THREE.PointLight(0xffa35c, 90, 22, 2);
+lamp.position.set(0, 2.6, 3.2);
+lamp.castShadow = true;
+scene.add(lamp);
+
+const mats = await loadMaterials(renderer);
+const roles = ['ground', 'asphalt', 'concrete', 'metal', 'wood', 'rock', 'bark'];
+
+// terrain: uv = world metres / tileMeters, vertex colours tint it
+const T = 60, SEG = 60, tile = mats.terrain.userData.tileMeters;
+const tg = new THREE.PlaneGeometry(T, T, SEG, SEG).rotateX(-Math.PI / 2);
+const pos = tg.attributes.position, uv = tg.attributes.uv, col = new Float32Array(pos.count * 3);
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), z = pos.getZ(i);
+  uv.setXY(i, x / tile, z / tile);
+  const n = 0.75 + 0.25 * Math.sin(x * 0.21) * Math.cos(z * 0.17); // low-frequency tint, like the game's vertex colours
+  col.set([0.8 * n, 0.85 * n, 0.95 * n], i * 3);
+}
+tg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+const terrain = new THREE.Mesh(tg, mats.terrain);
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+// road strip, uv in metres
+const rt = mats.asphalt.userData.tileMeters;
+const rg = new THREE.PlaneGeometry(8, 60).rotateX(-Math.PI / 2);
+for (let i = 0; i < rg.attributes.uv.count; i++) rg.attributes.uv.setXY(i, rg.attributes.position.getX(i) / rt, rg.attributes.position.getZ(i) / rt);
+const road = new THREE.Mesh(rg, mats.asphalt);
+road.position.set(0, 0.02, 12);
+road.receiveShadow = true;
+scene.add(road);
+
+// one box per role
+const W = 2.2, H = 2.6, D = 2.2;
+roles.forEach((role, i) => {
+  const g = boxUV(new THREE.BoxGeometry(W, H, D), W, H, D, mats[role].userData.tileMeters);
+  const m = new THREE.Mesh(g, mats[role]);
+  m.position.set((i - 3) * 3.2, H / 2, 0);
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+});
+
+const cam = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+window.view = (x, y, z, tx, ty, tz) => { cam.position.set(x, y, z); cam.lookAt(tx, ty, tz); };
+window.lamp = lamp; window.moon = moon; window.mats = mats; window.THREE = THREE;
+window.view(0, 3.4, 16, 0, 1.2, 0);
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+renderer.setAnimationLoop(() => renderer.render(scene, cam));
+document.getElementById('msg').textContent = 'ground asphalt concrete metal wood rock bark  (' + (renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2') + ')';
+window.ready = true;
+</script>
+</body>
+</html>

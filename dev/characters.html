@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Characters test page</title>
+<style>
+  html,body { margin:0; height:100%; background:#10151a; color:#e8ecef; font:12px/1.4 ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+  canvas#view { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #ui { position:fixed; left:8px; top:8px; background:rgba(12,16,20,.7); padding:8px 10px; border-radius:6px; display:grid; grid-template-columns:auto auto; gap:4px 10px; align-items:center; }
+  #ui label { color:#9aa5ad; }
+  #out { grid-column:1 / 3; color:#9aa5ad; white-space:pre; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "/node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "/node_modules/three/build/three.webgpu.js",
+    "three/tsl": "/node_modules/three/build/three.tsl.js",
+    "three/addons/": "/node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="ui">
+  <label>target</label><select id="target"><option value="all">all</option></select>
+  <label>state</label><select id="state"><option>idle</option><option>dormant</option><option>suspicious</option><option>alert</option><option>search</option><option>caution</option><option>dead</option></select>
+  <label>speed <span id="sv">0</span></label><input id="speed" type="range" min="0" max="5" step="0.1" value="0">
+  <label>attacking</label><input id="attacking" type="checkbox">
+  <label>crouch</label><input id="crouch" type="checkbox">
+  <label>drawing</label><input id="drawing" type="checkbox">
+  <label>sees</label><input id="sees" type="checkbox">
+  <label>step</label><span><input id="n" type="number" value="60" style="width:50px"> x dt <input id="dt" type="number" value="0.0167" step="0.001" style="width:60px"> <button id="stepbtn">step</button></span>
+  <label>realtime</label><input id="rt" type="checkbox" checked>
+  <div id="out"></div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { createPlayerFigure, createZombieFigure, DRAW, DRAWL } from '../src/characters.js';
+
+const $ = (id) => document.getElementById(id);
+const errors = [];
+addEventListener('error', (e) => errors.push(String(e.message)));
+addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)));
+
+const canvas = $('view');
+const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
+await renderer.init();
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a222b);
+scene.add(new THREE.HemisphereLight(0xb4c4e0, 0x4a4a50, 2.4));
+const moon = new THREE.DirectionalLight(0xd0dcff, 3.0);
+moon.position.set(-6, 10, 8);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048, 2048);
+Object.assign(moon.shadow.camera, { left: -12, right: 12, top: 8, bottom: -8, near: 1, far: 40 });
+moon.shadow.bias = -0.0004;
+scene.add(moon);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x4a4a42, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+scene.add(ground);
+const grid = new THREE.GridHelper(40, 40, 0x303840, 0x262d34); grid.position.y = 0.005; scene.add(grid);
+
+// row: player, hunter, sentinel, sleeper, screamer, hunter (id 6)
+const specs = [['player', null], ['hunter', { id: 1, kind: 'hunter' }], ['sentinel', { id: 2, kind: 'sentinel' }], ['sleeper', { id: 3, kind: 'sleeper' }],
+  ['screamer', { id: 4, kind: 'screamer' }], ['hunter6', { id: 6, kind: 'hunter' }]];
+const figs = specs.map(([name, z], i) => {
+  const fig = z ? createZombieFigure(z) : createPlayerFigure();
+  fig.root.position.x = (i - (specs.length - 1) / 2) * 1.8;
+  scene.add(fig.root);
+  return { name, fig, p: { speed: 0, state: 'idle', attacking: false, crouch: false, drawing: false, sees: false } };
+});
+for (const f of figs) { const o = document.createElement('option'); o.textContent = f.name; $('target').appendChild(o); }
+
+const cam = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 100);
+function setCam(x, y, z, tx, ty, tz) { cam.position.set(x, y, z); cam.lookAt(tx, ty, tz); }
+setCam(0, 1.5, 11, 0, 0.95, 0);
+
+const pick = (t) => (t === 'all' ? figs : figs.filter((f, i) => f.name === t || i === t));
+const dev = {
+  figs, THREE, errors, paused: false, DRAW, DRAWL, createPlayerFigure, createZombieFigure,
+  set(t, patch) { for (const f of pick(t)) Object.assign(f.p, patch); },
+  step(n = 1, dt = 1 / 60) { for (let k = 0; k < n; k++) for (const f of figs) f.fig.update(dt, f.p); },
+  cam(...a) { dev.tiles(null); setCam(...a); },
+  // look at one figure; az = 0 front, PI/2 from its left (+x), -PI/2 from its right
+  focus(i, az = 0.5, dist = 4.6, h = 1.2, ty = 0.92) {
+    const r = figs[i].fig.root.position;
+    dev.tiles(null); setCam(r.x + Math.sin(az) * dist, h, r.z + Math.cos(az) * dist, r.x, ty, r.z);
+  },
+  // tile mode: one portrait tile per entry { i, az, dist, h, ty }, only that figure visible in its tile (for headless screenshots)
+  tileList: null,
+  tiles(list) { dev.tileList = list; $('ui').style.display = list ? 'none' : ''; },
+  async render() {
+    const L = dev.tileList;
+    if (!L) { renderer.render(scene, cam); return; }
+    const W = innerWidth, H = innerHeight, w = W / L.length, c = new THREE.PerspectiveCamera(32, w / H, 0.1, 100);
+    renderer.setScissorTest(true);
+    L.forEach((t, k) => {
+      figs.forEach((f, j) => { f.fig.root.visible = j === t.i; });
+      const r = figs[t.i].fig.root.position, az = t.az ?? 0.5, d = t.dist ?? 4.3;
+      const dz = t.dz ?? 0; c.position.set(r.x + Math.sin(az) * d, t.h ?? 1.2, r.z + dz + Math.cos(az) * d); c.lookAt(r.x, t.ty ?? 0.92, r.z + dz);
+      renderer.setViewport(k * w, 0, w, H); renderer.setScissor(k * w, 0, w, H);
+      renderer.render(scene, c);
+    });
+    figs.forEach((f) => { f.fig.root.visible = true; });
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+  },
+  meshCount(i) { let n = 0; figs[i].fig.root.traverse((o) => { if (o.isMesh) n++; }); return n; },
+  // NaN / robustness check: dt = 0, huge dt, bad inputs, then every matrix must be finite
+  check() {
+    const res = {};
+    for (const f of figs) {
+      const bad = [];
+      for (const [label, dt, p] of [['dt0', 0, f.p], ['dtHuge', 1e9, f.p], ['dtNaN', NaN, f.p], ['dtNeg', -5, f.p], ['badP', 0.016, { speed: NaN, state: 'bogus' }], ['noP', 0.016, undefined]]) {
+        f.fig.update(dt, p);
+        f.fig.root.updateMatrixWorld(true);
+        f.fig.root.traverse((o) => { if (!o.matrixWorld.elements.every(Number.isFinite)) bad.push(label + ':' + o.type); });
+      }
+      res[f.name] = bad.length ? bad : 'ok';
+    }
+    return res;
+  },
+  elbow(i, side) { const f = figs[i].fig; f.rig.updateMatrixWorld(true); return f.rig.worldToLocal(f.J.arms[side].el.getWorldPosition(new THREE.Vector3())).toArray().map((x) => +x.toFixed(3)); },
+  hand(i, side) { const f = figs[i].fig; f.rig.updateMatrixWorld(true); const a = f.J.arms[side].wr; const v = new THREE.Vector3(0, -0.04, 0); return f.rig.worldToLocal(a.localToWorld(v)).toArray().map((x) => +x.toFixed(3)); },
+};
+window.dev = dev;
+
+function ui() {
+  const t = $('target').value;
+  dev.set(t, { state: $('state').value, speed: +$('speed').value, attacking: $('attacking').checked, crouch: $('crouch').checked, drawing: $('drawing').checked, sees: $('sees').checked });
+  $('sv').textContent = $('speed').value;
+}
+for (const id of ['target', 'state', 'speed', 'attacking', 'crouch', 'drawing', 'sees']) $(id).addEventListener('input', ui);
+$('stepbtn').onclick = async () => { dev.step(+$('n').value, +$('dt').value); await dev.render(); };
+$('rt').onchange = () => { dev.paused = !$('rt').checked; };
+$('out').textContent = 'order: ' + figs.map((f, i) => i + ':' + f.name).join('  ') + '\nmeshes: ' + figs.map((f, i) => dev.meshCount(i)).join(' ');
+if (new URLSearchParams(location.search).has('paused')) { dev.paused = true; $('rt').checked = false; }
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (!dev.paused) { dev.step(1, dt); }
+  dev.render();
+  requestAnimationFrame(loop);
+}
+dev.step(1, 0);
+requestAnimationFrame(loop);
+dev.ready = true;
+</script>
+</body>
+</html>

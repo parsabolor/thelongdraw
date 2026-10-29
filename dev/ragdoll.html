@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8"><title>ragdoll</title>
+<base href="../">
+<style>html,body{margin:0;height:100%;background:#20262c;overflow:hidden}canvas{display:block}#t{position:fixed;left:8px;top:6px;color:#cde;font:12px monospace;white-space:pre}</style>
+<script type="importmap">
+{ "imports": {
+    "three": "./node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "./node_modules/three/build/three.webgpu.js",
+    "three/tsl": "./node_modules/three/build/three.tsl.js",
+    "three/addons/": "./node_modules/three/examples/jsm/"
+} }
+</script>
+<div id="t"></div>
+<script type="module">
+// Dev tool: /dev/ragdoll.html?scn=flat|slope|wall|box&part=head|chest|hips|none&az=180&el=0&yaw=0&walk=0.9&speed=1.1&seed=7&view=iso|side|top|front&dbg=1
+// Kills the real game zombie figure (src/models.js createFigure, mid-stride) and drops it with src/ragdoll.js. The sim is not involved: the zombie stands at the origin.
+//   scn: flat | slope (y = k * distance along sd degrees, default k 0.6 uphill in +Z) | wall (a 1 m high, 1 m thick box over z 0.7..1.7) | box (1 m box over x,z 0.4..1.4)
+//        | edge (a 0.45 m crate over z 0.55..1.6) | roof (standing on a 1 m roof that ends at x 0.35)
+//   az/el: direction of the killing blow in degrees (az 180 = toward -Z, i.e. shot from the front, the zombie faces +Z).
+// window.__rd.reset(opts) builds a fresh corpse, window.__rd.to(seconds) runs the ragdoll to that time and draws it, window.__rd.info() reads the state.
+import * as THREE from 'three';
+import { loadModels, createFigure } from './src/models.js';
+import { createRagdoll, JOINTS } from './src/ragdoll.js';
+
+const q = new URLSearchParams(location.search), num = (k, d) => (q.has(k) ? +q.get(k) : d);
+const renderer = new THREE.WebGPURenderer({ antialias: true }); await renderer.init();
+renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#20262c');
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 2.4); sun.position.set(3, 6, 4); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 20 }); scene.add(sun);
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 50);
+
+const models = await loadModels();
+if (!models.zombie) { document.getElementById('t').textContent = 'no zombie model'; throw new Error('no zombie model'); }
+
+function groundFn(scn, o) {
+  if (scn === 'slope') { const k = num('k', 0.6), sd = num('sd', 0) * Math.PI / 180; return (x, z) => k * (x * Math.sin(sd) + z * Math.cos(sd)); }
+  if (scn === 'wall') return (x, z) => (z > 0.7 && z < 1.7 ? 1 : 0);
+  if (scn === 'box') return (x, z) => (x > 0.4 && x < 1.4 && z > 0.4 && z < 1.4 ? 1 : 0);
+  if (scn === 'edge') return (x, z) => (z > 0.55 && z < 1.6 ? 0.45 : 0); // a 0.45 m crate: a body falling toward it ends draped over its edge
+  if (scn === 'roof') return (x, z) => (x < 0.35 ? 1 : 0); // the zombie stands on a 1 m roof, the edge 0.35 m away
+  return () => 0;
+}
+function floorMesh(g) { // the heightfield as a mesh with 0.5 m checkers
+  const R = 4, n = 160, geo = new THREE.PlaneGeometry(2 * R, 2 * R, n, n); geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i); pos.setY(i, g(x, z));
+    const c = (Math.floor(x / 0.5 + 1e-6) + Math.floor(z / 0.5 + 1e-6)) & 1 ? 0.5 : 0.62; col.set([c, c * 1.02, c * 1.06], i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })); m.receiveShadow = true; return m;
+}
+
+let cur = null, world = null, dots = [];
+const rd = window.__rd = {
+  ready: false,
+  reset(o = {}) {
+    if (cur) { cur.fig.dispose(); cur.rag && cur.rag.dispose(); }
+    if (world) scene.remove(world);
+    dots.forEach((d) => scene.remove(d)); dots = [];
+    const scn = o.scn || q.get('scn') || 'flat', g = groundFn(scn, o);
+    world = floorMesh(g); scene.add(world);
+    const z = { id: o.seed ?? num('seed', 7), kind: 'hunter' }, fig = createFigure(models.zombie, z);
+    const y0 = g(0, 0); fig.root.position.set(0, y0, 0); fig.root.rotation.y = (o.yaw ?? num('yaw', 0)) * Math.PI / 180; scene.add(fig.root);
+    const walk = o.walk ?? num('walk', 0.9), speed = o.speed ?? num('speed', 1.1); // walk the mixer for `walk` seconds so it freezes mid-stride
+    for (let t = 0; t < walk; t += 1 / 30) fig.update(1 / 30, { speed, state: 'walk' });
+    fig.root.updateMatrixWorld(true);
+    let model = null; fig.root.traverse((m) => { if (m.isSkinnedMesh && !model) model = m.parent; });
+    const part = o.part ?? (q.get('part') || 'head'), az = (o.az ?? num('az', 180)) * Math.PI / 180, el = (o.el ?? num('el', 0)) * Math.PI / 180;
+    const dir = part === 'none' ? null : [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+    const rag = createRagdoll({ THREE, model, ground: g, anchor: { x: 0, y: y0, z: 0 }, impulse: { dir, part: part === 'none' ? null : part, speed }, seed: z.id });
+    if (!rag) throw new Error('createRagdoll returned null');
+    cur = { fig, rag, g, y0 };
+    if ((o.dbg ?? q.get('dbg')) === '1' || o.dbg === 1) for (const [n, r] of JOINTS) {
+      const d = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 6), new THREE.MeshBasicMaterial({ color: n === 'Hips' ? 0xff4040 : 0x40ff80, wireframe: true })); scene.add(d); dots.push(d);
+    }
+    rd.view(o.view);
+    rd.draw();
+  },
+  view(v) {
+    v = v || q.get('view') || 'iso';
+    const c = new THREE.Vector3(0, cur.y0 + 0.35, 0.0), d = { iso: [2.2, 1.7, 2.6], side: [3.4, 0.9, 0], top: [0.01, 4.2, 0.01], front: [0, 1.2, 3.8], back: [0, 1.4, -3.6], isoback: [-2.6, 1.8, -2.4] }[v] || [2.2, 1.7, 2.6];
+    cam.position.set(c.x + d[0], cur.y0 + d[1], c.z + d[2]); cam.up.set(0, 1, v === 'top' ? -1 : 0); cam.lookAt(c);
+  },
+  draw() {
+    const b = cur.rag.body;
+    dots.forEach((d, i) => d.position.set(b.x[i * 3], b.x[i * 3 + 1], b.x[i * 3 + 2]));
+    renderer.render(scene, cam);
+    const i = rd.info(); document.getElementById('t').textContent = `t ${i.t.toFixed(2)}s  ${i.frozen ? 'frozen' : 'moving'}  strain ${(i.strain * 100).toFixed(1)}%  pelvis ${i.pelvis.map((v) => v.toFixed(2))}`;
+  },
+  to(sec) { // run the ragdoll to `sec` seconds (one 1/120 substep per update), then draw
+    const r = cur.rag; let n = 0;
+    while (r.body.time < sec - 1e-6 && !r.frozen && n++ < 100000) r.update(1 / 120);
+    rd.draw(); return rd.info();
+  },
+  info() { const b = cur.rag.body; return { t: b.time, frozen: cur.rag.frozen, strain: b.maxStrain(), motion: b.motion, pelvis: b.pos('Hips'), head: b.pos('Head') }; },
+};
+rd.reset();
+await new Promise((r) => setTimeout(r, 1500)); // textures arrive after the first draw
+rd.draw(); rd.ready = true;
+</script>

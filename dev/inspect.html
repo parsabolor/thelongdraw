@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8"><title>model inspector</title>
+<script type="importmap">
+{ "imports": {
+    "three": "../node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "../node_modules/three/build/three.webgpu.js",
+    "three/addons/": "../node_modules/three/examples/jsm/"
+} }
+</script>
+<body style="font:13px monospace;background:#111;color:#ddd"><pre id="out">loading…</pre>
+<script type="module">
+// Dev tool: /dev/inspect.html?f=<url of .fbx|.glb|.gltf|.obj>  prints what the model contains (size, bones, clips, materials).
+// Textures are replaced by a 1-pixel image so huge PNGs don't slow the check. Result also in window.__inspect.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+
+const url = new URLSearchParams(location.search).get('f');
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const manager = new THREE.LoadingManager();
+manager.setURLModifier((u) => (/\.(png|jpe?g|tga|webp|bmp)(\?|$)/i.test(u) ? PIXEL : u));
+const r2 = (n) => +n.toFixed(3);
+
+try {
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+  const obj = ext === 'fbx' ? await new FBXLoader(manager).loadAsync(url)
+    : ext === 'obj' ? await new OBJLoader(manager).loadAsync(url)
+    : await new GLTFLoader(manager).loadAsync(url);
+  const scene = obj.scene || obj, clips = obj.animations || [];
+  scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(scene), size = box.getSize(new THREE.Vector3());
+  let tris = 0, meshes = 0, skinned = 0; const bones = [], mats = new Set(), top = [];
+  scene.traverse((o) => {
+    if (o.isMesh) { meshes++; if (o.isSkinnedMesh) skinned++; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+      for (const m of [].concat(o.material)) mats.add(`${m.name || '?'}|${m.type}|map:${!!m.map}|normal:${!!m.normalMap}`); }
+    if (o.isBone) bones.push(o.name);
+  });
+  scene.children.forEach((c) => top.push(`${c.type}:${c.name}@${c.position.toArray().map(r2)}/s${c.scale.x}`));
+  const nodes = []; scene.traverse((o) => { if (nodes.length < 60 && !o.isBone) nodes.push(`${o.type}:${o.name}`); });
+  // per mesh, and per material group of a multi-material mesh: world bounding box (tells which end of a model is which)
+  const parts = [];
+  scene.traverse((o) => {
+    if (!o.isMesh || parts.length > 40) return;
+    const g = o.geometry, pos = g.attributes.position, idx = g.index, mat = [].concat(o.material), v = new THREE.Vector3();
+    for (const [i, grp] of (g.groups.length ? g.groups : [{ start: 0, count: idx ? idx.count : pos.count, materialIndex: 0 }]).entries()) {
+      const b = new THREE.Box3();
+      for (let k = grp.start; k < grp.start + grp.count; k++) { v.fromBufferAttribute(pos, idx ? idx.getX(k) : k).applyMatrix4(o.matrixWorld); b.expandByPoint(v); }
+      parts.push(`${o.name}/${(mat[grp.materialIndex] || {}).name || i}: min ${b.min.toArray().map(r2)} max ${b.max.toArray().map(r2)}`);
+    }
+  });
+  const res = {
+    url, tris: Math.round(tris), meshes, skinned, scale: scene.scale.x, size: size.toArray().map(r2), min: box.min.toArray().map(r2),
+    bones: bones.length, boneNames: bones.slice(0, 80), top, nodes, parts,
+    clips: clips.map((c) => ({ name: c.name, s: r2(c.duration), tracks: c.tracks.length })), mats: [...mats],
+  };
+  window.__inspect = res; document.getElementById('out').textContent = JSON.stringify(res, null, 1);
+} catch (e) {
+  window.__inspect = { url, error: String(e && e.message || e) }; document.getElementById('out').textContent = 'ERROR ' + (e && e.stack || e);
+}
+</script>

@@ -1,0 +1,24 @@
+{
+  "name": "the-long-draw-web",
+  "version": "1.0.0",
+  "description": "Three.js WebGPU grey-box of one outpost for The Long Draw",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node tools/serve.mjs 5173"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "meshoptimizer": "^1.3.0"
+  }
+}

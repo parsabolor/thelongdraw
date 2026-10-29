@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bow viewmodel test</title>
+<style>
+  html,body { margin:0; height:100%; background:#05070b; color:#dfe6ee; font:12px/1.4 ui-monospace,Menlo,Consolas,monospace; overflow:hidden; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #ui { position:fixed; left:10px; bottom:10px; background:rgba(8,12,18,.72); padding:8px 10px; border-radius:6px; min-width:260px; }
+  #ui label { display:flex; gap:8px; align-items:center; justify-content:space-between; margin:2px 0; }
+  #ui input[type=range] { width:150px; }
+  #out { position:fixed; right:10px; top:10px; background:rgba(8,12,18,.72); padding:6px 8px; border-radius:6px; white-space:pre; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "/node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "/node_modules/three/build/three.webgpu.js",
+    "three/tsl": "/node_modules/three/build/three.tsl.js",
+    "three/addons/": "/node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="ui">
+  <label>raise <input id="raise" type="range" min="0" max="1" step="0.01"><b id="raiseV"></b></label>
+  <label>draw <input id="draw" type="range" min="0" max="1" step="0.01"><b id="drawV"></b></label>
+  <label>kind <select id="kind"><option>basic</option><option>lure</option></select></label>
+  <label>fov <input id="fov" type="range" min="30" max="75" step="1"><b id="fovV"></b></label>
+  <label>guides <input id="guides" type="checkbox"></label>
+</div>
+<div id="out"></div>
+<script type="module">
+import * as THREE from 'three';
+import { createBowViewmodel, loadBowAssets } from '/src/bow.js';
+import { pinAngles } from '/src/sim.js';
+
+// URL params: raise draw kind fov gd(guide distance m) guides(0/1) ui(0/1) still(1 = no idle motion) sway(x,y radians) moving(1)
+//   model=0 the procedural bow (default: the user's compound bow + Avalon sight, falling back to procedural if they do not load)
+//   view=side|top|back|front: a detached camera looking at the viewmodel (default cam = the first-person view)
+const q = new URLSearchParams(location.search);
+const P = {
+  raise: +(q.get('raise') ?? 1), draw: +(q.get('draw') ?? 0), kind: q.get('kind') || 'basic', fov: +(q.get('fov') ?? 40),
+  gd: +(q.get('gd') ?? 40), sway: (q.get('sway') || '0,0').split(',').map(Number), moving: q.get('moving') === '1', guides: q.get('guides') !== '0', ui: q.get('ui') !== '0', still: q.get('still') === '1',
+};
+const $ = (id) => document.getElementById(id);
+if (!P.ui) { $('ui').style.display = 'none'; $('out').style.display = 'none'; }
+
+const SIGHT_DIST = 0.62, EYE = 1.6;
+const PIN_COLORS = [0x3cff7a, 0xffe14d, 0xff9a3c, 0xff5a5a, 0x7ad0ff]; // as in main.js
+const PINS = pinAngles().map((angle, i) => ({ angle, color: PIN_COLORS[i] })); // the sim's ballistic angles: ~20/30/40/50/60 m
+
+const renderer = new THREE.WebGPURenderer({ canvas: $('view'), antialias: true });
+await renderer.init();
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1626);
+scene.fog = new THREE.FogExp2(0x0e1626, 0.012);
+scene.add(new THREE.HemisphereLight(0x6a7eb0, 0x1a2030, 1.5));
+const moon = new THREE.DirectionalLight(0xa9bcff, 1.8);
+moon.position.set(-30, 50, 25);
+scene.add(moon);
+
+const world = new THREE.Group(); scene.add(world);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x33402f, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; world.add(ground);
+const postMat = new THREE.MeshStandardMaterial({ color: 0x8a7a60, roughness: 1 });
+for (const [x, z] of [[-3, -12], [4, -20], [-6, -30], [3, -40], [-4, -50], [5, -60]]) {
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 1.9, 8), postMat);
+  p.position.set(x, 0.95, z); world.add(p);
+}
+
+const camera = new THREE.PerspectiveCamera(P.fov, innerWidth / innerHeight, 0.05, 500);
+camera.position.set(0, EYE, 0);
+scene.add(camera);
+
+const assets = q.get('model') === '0' ? null : await loadBowAssets('/assets/models/game/');
+const vm = createBowViewmodel({ pins: PINS, sightDist: SIGHT_DIST, assets });
+camera.add(vm.group);
+let view = camera; // the camera that renders: the first-person one, or a detached one around the viewmodel
+const vname = q.get('view');
+if (vname) {
+  vm.group.removeFromParent(); vm.group.position.set(0, EYE, 0); scene.add(vm.group); // world == camera space, shifted up by the eye height
+  const at = new THREE.Vector3(0, EYE - 0.05, -0.5), spot = { side: [1.1, 0, -0.5], top: [0, 1.1, -0.5], back: [0, 0, 0.7], front: [0, 0, -1.7] }[vname] || [1.1, 0, -0.5];
+  view = new THREE.PerspectiveCamera(+(q.get('vfov') ?? 35), innerWidth / innerHeight, 0.02, 500);
+  view.position.set(at.x + spot[0], at.y + spot[1], at.z + spot[2]); view.up.set(0, vname === 'top' ? 0 : 1, vname === 'top' ? -1 : 0); view.lookAt(at);
+  scene.add(view);
+}
+
+// Guide lines on a distant plane: y = EYE - tan(angle) * GD. Each pin tip must cover its line.
+const guideMats = PINS.map((p) => new THREE.MeshBasicMaterial({ color: p.color, fog: false, toneMapped: false }));
+const guides = new THREE.Group(); world.add(guides);
+PINS.forEach((p, i) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(14, P.gd * 0.0015, 0.02), guideMats[i]);
+  m.position.set(0, EYE - Math.tan(p.angle) * P.gd, -P.gd);
+  guides.add(m);
+});
+const bore = new THREE.Mesh(new THREE.BoxGeometry(14, P.gd * 0.001, 0.02), new THREE.MeshBasicMaterial({ color: 0x8899aa, fog: false, toneMapped: false }));
+bore.position.set(0, EYE, -P.gd); guides.add(bore);
+guides.visible = P.guides;
+
+function set(raise, draw, kind) {
+  P.raise = raise ?? P.raise; P.draw = draw ?? P.draw; P.kind = kind ?? P.kind;
+  vm.setRaise(P.raise); vm.setDraw(P.draw); vm.setKind(P.kind);
+  $('raise').value = P.raise; $('raiseV').textContent = P.raise.toFixed(2);
+  $('draw').value = P.draw; $('drawV').textContent = P.draw.toFixed(2);
+  $('kind').value = P.kind;
+}
+set();
+$('fov').value = P.fov; $('fovV').textContent = P.fov; $('guides').checked = P.guides;
+$('raise').oninput = (e) => set(+e.target.value);
+$('draw').oninput = (e) => set(undefined, +e.target.value);
+$('kind').onchange = (e) => set(undefined, undefined, e.target.value);
+$('fov').oninput = (e) => { camera.fov = +e.target.value; camera.updateProjectionMatrix(); $('fovV').textContent = e.target.value; };
+$('guides').onchange = (e) => { guides.visible = e.target.checked; };
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+// ---- pin alignment test ----
+const size = new THREE.Vector2();
+const toPx = (v) => { const p = v.clone().project(camera); renderer.getSize(size); return [(p.x * 0.5 + 0.5) * size.x, (-p.y * 0.5 + 0.5) * size.y]; };
+function numeric() { // project each pin tip and its guide point (same angle on the distant plane) to pixels
+  scene.updateMatrixWorld(true);
+  const rows = PINS.map((p, i) => {
+    const tip = vm.pinTips[i].getWorldPosition(new THREE.Vector3());
+    const guide = new THREE.Vector3(0, EYE - Math.tan(p.angle) * P.gd, -P.gd);
+    const a = toPx(tip), b = toPx(guide);
+    return { pin: i, tipPx: a.map((n) => +n.toFixed(2)), guidePx: b.map((n) => +n.toFixed(2)), dx: +(a[0] - b[0]).toFixed(3), dy: +(a[1] - b[1]).toFixed(3) };
+  });
+  return rows;
+}
+// 'measure' mode: black scene, magenta guide lines, only the pin tips of the viewmodel (no halos), so a screenshot can be analysed.
+let saved = null;
+function mode(name) {
+  if (name === 'measure' && !saved) {
+    saved = { bg: scene.background, fog: scene.fog, vis: [], mats: guideMats.map((m) => m.color.getHex()) };
+    vm.group.traverse((o) => { if (o.isMesh) { saved.vis.push([o, o.visible]); o.visible = vm.pinTips.includes(o); } });
+    scene.background = new THREE.Color(0); scene.fog = null; ground.visible = false; world.children.forEach((c) => { if (c !== guides && c !== ground) c.visible = false; });
+    guideMats.forEach((m) => m.color.set(0xff00ff)); bore.visible = false; guides.visible = true;
+  } else if (name === 'normal' && saved) {
+    scene.background = saved.bg; scene.fog = saved.fog; saved.vis.forEach(([o, v]) => { o.visible = v; });
+    ground.visible = true; world.children.forEach((c) => { c.visible = true; }); guides.visible = P.guides;
+    guideMats.forEach((m, i) => m.color.setHex(saved.mats[i])); bore.visible = true; saved = null;
+  }
+}
+
+const clock = new THREE.Timer();
+renderer.setAnimationLoop(() => {
+  clock.update(); const dt = Math.min(clock.getDelta(), 0.05);
+  if (!P.still) vm.update(dt, { sway: P.sway, moving: P.moving });
+  renderer.render(scene, view);
+});
+if (P.still) vm.update(0, { sway: P.sway, moving: false });
+window.bowTest = { vm, camera, renderer, scene, set, numeric, mode, PINS, P, EYE };
+window.addEventListener('error', (e) => { $('out').textContent = 'ERROR ' + e.message; });
+$('out').textContent = 'bow test ready: ' + (renderer.backend && renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2') + (assets ? ' + models' : ' (procedural)');
+window.bowReady = true;
+</script>
+</body>
+</html>

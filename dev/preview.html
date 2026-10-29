@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8"><title>model preview</title>
+<style>html,body{margin:0;height:100%;background:#2a2f35;overflow:hidden}canvas{display:block}#t{position:fixed;left:8px;top:6px;color:#cde;font:12px monospace}</style>
+<script type="importmap">
+{ "imports": {
+    "three": "../node_modules/three/build/three.webgpu.js",
+    "three/webgpu": "../node_modules/three/build/three.webgpu.js",
+    "three/addons/": "../node_modules/three/examples/jsm/"
+} }
+</script>
+<div id="t"></div>
+<script type="module">
+// Dev tool: /dev/preview.html?f=<.fbx|.glb|.gltf|.obj>&view=front|side|back|top|iso&map=name:albedo.jpg,*:other.jpg&bg=2a2f35&scale=1
+// Draws one model with an orthographic camera fitted to its bounding box (front looks along -Z, side along -X, top along -Y).
+// map: albedo images by mesh name ('*' = every mesh), for models whose files carry no usable materials. Sets window.__preview when drawn.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+
+const q = new URLSearchParams(location.search), url = q.get('f'), view = q.get('view') || 'front';
+const renderer = new THREE.WebGPURenderer({ antialias: true }); await renderer.init();
+renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#' + (q.get('bg') || '2a2f35'));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 1.6)); const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(3, 5, 4); scene.add(sun);
+try {
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+  const r = await (ext === 'fbx' ? new FBXLoader() : ext === 'obj' ? new OBJLoader() : new GLTFLoader()).loadAsync(url);
+  const root = r.scene || r;
+  const maps = Object.fromEntries((q.get('map') || '').split(',').filter(Boolean).map((p) => { const i = p.indexOf(':'); return [p.slice(0, i), p.slice(i + 1)]; }));
+  const tl = new THREE.TextureLoader(), cache = {};
+  root.traverse((o) => {
+    if (o.isCamera) o.visible = false;
+    const f = o.isMesh && (maps[o.name] || maps['*']);
+    if (f) { cache[f] = cache[f] || Object.assign(tl.load(f), { colorSpace: THREE.SRGBColorSpace }); o.material = new THREE.MeshStandardMaterial({ map: cache[f], roughness: 0.85 }); }
+    else if (o.isMesh && !o.material.map) o.material = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, roughness: 0.8, side: THREE.DoubleSide });
+  });
+  const s = +q.get('scale') || 1; root.scale.multiplyScalar(s); scene.add(root); root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const fit = (q.get('fit') || '').split(',').map(Number); // fit=minx,miny,minz,maxx,maxy,maxz: frame this box instead of the whole model
+  const view6 = fit.length === 6 && fit.every(Number.isFinite) ? new THREE.Box3(new THREE.Vector3(...fit.slice(0, 3)), new THREE.Vector3(...fit.slice(3))) : box;
+  const c = view6.getCenter(new THREE.Vector3()), size = view6.getSize(new THREE.Vector3());
+  const dirs = { front: [0, 0, 1], back: [0, 0, -1], side: [1, 0, 0], top: [0, 1, 0.001], iso: [1, 0.8, 1] }, d = new THREE.Vector3(...dirs[view]).normalize();
+  const span = view === 'top' ? [size.x, size.z] : view === 'side' ? [size.z, size.y] : [size.x, size.y];
+  const aspect = innerWidth / innerHeight, h = Math.max(span[1], span[0] / aspect) * 0.58;
+  const cam = new THREE.OrthographicCamera(-h * aspect, h * aspect, h, -h, 0.01, size.length() * 4);
+  cam.position.copy(c).addScaledVector(d, size.length() * 2); cam.up.set(0, view === 'top' ? 0 : 1, view === 'top' ? -1 : 0); cam.lookAt(c);
+  renderer.render(scene, cam);
+  document.getElementById('t').textContent = `${url.split('/').pop()}  ${view}  size ${size.toArray().map((v) => v.toFixed(2)).join(' x ')}`;
+  await new Promise((res) => setTimeout(res, 1500)); renderer.render(scene, cam); // textures arrive after the first draw
+  window.__preview = { size: size.toArray(), min: box.min.toArray() };
+} catch (e) { window.__preview = { error: String(e && e.message || e) }; document.getElementById('t').textContent = 'ERROR ' + e; }
+</script>
