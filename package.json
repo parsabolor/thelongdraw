@@ -1,19 +1,17 @@
 {
-  "name": "the-long-draw-web",
+  "name": "thelongdraw",
   "version": "1.0.0",
-  "description": "Three.js WebGPU grey-box of one outpost for The Long Draw",
-  "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
+  "description": "The Long Draw: a stealth-archery zombie prototype (Three.js WebGPU, one outpost)",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
     "test": "node --test",
     "start": "node tools/serve.mjs 5173"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "three": "^0.186.1"
   },

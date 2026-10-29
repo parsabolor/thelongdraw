@@ -25,6 +25,7 @@ export function detailMaterial(src, layers) {
   const m = new THREE.MeshStandardNodeMaterial({ map: src.map, normalMap: src.normalMap, roughness: src.roughness ?? 0.95, metalness: src.metalness ?? 0, side: src.side });
   if (src.normalScale) m.normalScale.copy(src.normalScale);
   let colour = texture(src.map).rgb; // the scan's colour: colorNode replaces the material's own use of `map`
+  if (src.color && (src.color.r !== 1 || src.color.g !== 1 || src.color.b !== 1)) colour = colour.mul(vec3(src.color.r, src.color.g, src.color.b)); // and so, for the material's tint
   for (const L of layers) {
     const avg = uniform(new THREE.Vector3(...averageColour(L.map)));
     const p = positionWorld.mul(1 / L.meters), n = abs(normalWorld), side = float(1).sub(smoothstep(0.3, 0.6, n.y)); // side: 0 on ground, 1 on a cliff face

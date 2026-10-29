@@ -89,6 +89,7 @@ let S = sim.createState(LEVEL, 1);
 
 // The terrain: the baked world (src/level.js terrainGrid): a smooth surface subdivided to 0.25 m cells within 60 m of the middle, the plain 1 m grid out to
 // 140 m (beyond the sim's own bounds the ground mirrors itself), textured with the supplied scan's colour and normal maps.
+const haveScan = await fetch('./assets/world/terrain_albedo.jpg', { method: 'HEAD' }).then((r) => r.ok).catch(() => false); // is the supplied scan's colour map there?
 function buildTerrain() {
   const grid = terrainGrid({ outer: 140, inner: 60, sub: 4 });
   const geo = new THREE.BufferGeometry();
@@ -97,7 +98,11 @@ function buildTerrain() {
   geo.setIndex(new THREE.BufferAttribute(grid.indices, 1));
   geo.computeVertexNormals();
   const tex = (url, srgb) => { const t = new THREE.TextureLoader().load(url); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
-  const scan = new THREE.MeshStandardMaterial({ map: tex('./assets/world/terrain_albedo.jpg', true), normalMap: tex('./assets/world/terrain_normal.jpg', false), roughness: 0.95, metalness: 0 });
+  // Without the scan's texture files (they are not in the public repo, see README) the ground is a neutral rocky base under the same gravel detail.
+  const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); white.needsUpdate = true; white.colorSpace = THREE.SRGBColorSpace;
+  const scan = haveScan
+    ? new THREE.MeshStandardMaterial({ map: tex('./assets/world/terrain_albedo.jpg', true), normalMap: tex('./assets/world/terrain_normal.jpg', false), roughness: 0.95, metalness: 0 })
+    : new THREE.MeshStandardMaterial({ map: white, color: 0x7a7066, roughness: 0.95, metalness: 0 });
   // the scan's colour map is 1024 px over 200 m (20 cm a texel): gravel detail at two scales, in world space, gives the ground its grain up close (src/detail.js)
   const mat = detailMaterial(scan, [{ map: mats.ground.map, meters: 4, strength: 0.9 }, { map: mats.ground.map, meters: 1.1, strength: 0.6 }]);
   const mesh = new THREE.Mesh(geo, mat);
