@@ -1,6 +1,6 @@
 // detail.js: high-frequency detail over a low-resolution scan texture, in the material itself (a TSL node material, WebGPU).
 //   detailMaterial(src, layers) -> MeshStandardNodeMaterial
-//     src:    the material to improve (its map, normalMap, roughness, metalness and normalScale are kept: the scan's own look and normal map)
+//     src:    the material to improve (its map, color, normalMap, roughness, metalness and normalScale are kept: the scan's own look and normal map)
 //     layers: [{ map: Texture (tileable, RepeatWrapping, sRGB), meters: world size of one tile, strength: 0..1 }]
 //   Each layer is sampled in WORLD space (no UV seams): from above (xz) wherever the surface is not steep (a 45 degree slope stretches it only 1.4x), and from
 //   the sides (zy / xy, by the normal) only on faces steeper than about 65 degrees, so ground never shows the streaks of a plain triplanar blend; it is

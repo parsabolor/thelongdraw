@@ -4,9 +4,10 @@
 // (exit code 2): run it again later. Downloads are untrusted data and never executed: each file must parse as glTF
 // JSON (or, for the licence, contain "Creative Commons") or it is not saved.
 //   node tools/fetch-quaternius.mjs
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 
-const OUT = new URL('../assets/models/candidates/quaternius-zak/', import.meta.url).pathname;
+const OUT = fileURLToPath(new URL('../assets/models/candidates/quaternius-zak/', import.meta.url));
 const FILES = {
   characters: {
     'Zombie_Basic.gltf': '1S6EfXv0Fc6SiqyoPx5gNF48MI0OajNLr', 'Zombie_Arm.gltf': '19MMkSg5NkpeSNb6271EoN_pNeBlQpt4Z',

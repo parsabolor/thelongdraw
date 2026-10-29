@@ -3,13 +3,14 @@
 // The file has ten vertex attributes on its big mesh (position, normal, tangent, skin indices and weights, and five identical UV sets), and WebGPU
 // allows only eight vertex buffers per pipeline, so the mesh silently fails to draw. This drops what is not needed (the extra UV sets, which are
 // identical to the first, and the tangents), points every texture at UV set 0, and downsizes the five 2048 px textures to 1024 JPEGs with macOS `sips`.
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { NodeIO } from '@gltf-transform/core';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC = `${ROOT}assets/models/incoming/zombie-glb/zombie.glb`, OUT = `${ROOT}assets/models/game/scout.glb`;
 const doc = await new NodeIO().read(SRC), tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-'));
 const root = doc.getRoot();

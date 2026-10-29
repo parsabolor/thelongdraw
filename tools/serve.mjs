@@ -5,11 +5,12 @@
 //     URL, so a browser can never run a new main.js next to an old cached level.js. That mismatch ("does not provide an export named ...") leaves the page stuck on
 //     "Loading renderer..." with nothing on screen to say why.
 // Binds to 127.0.0.1 only and never serves outside the directory.
+import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = path.resolve(process.argv[3] || new URL('..', import.meta.url).pathname), PORT = +process.argv[2] || 5173;
+const ROOT = path.resolve(process.argv[3] || fileURLToPath(new URL('..', import.meta.url))), PORT = +process.argv[2] || 5173;
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.css': 'text/css',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
@@ -32,7 +33,7 @@ function stampHtml(html) {
   return html.replace(/(src=")(?:\.\/|\/)?(src\/[\w.-]+\.js)(")/g, (all, a, file, c) => (map['/' + file] ? a + map['/' + file] + c : all));
 }
 
-http.createServer((req, res) => {
+function handle(req, res) {
   const url = new URL(req.url, 'http://x'), rel = decodeURIComponent(url.pathname);
   let file = path.join(ROOT, rel.endsWith('/') ? rel + 'index.html' : rel);
   if (!file.startsWith(ROOT + path.sep) && file !== ROOT) { res.writeHead(403); return res.end('forbidden'); }
@@ -52,4 +53,8 @@ http.createServer((req, res) => {
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);
   });
+}
+// a malformed URL (a lone %, a NUL byte) throws while it is decoded or stat-ed: answer 400, never take the server down
+http.createServer((req, res) => {
+  try { handle(req, res); } catch { res.writeHead(400, { 'Cache-Control': 'no-cache' }); res.end('bad request'); }
 }).listen(PORT, '127.0.0.1', () => console.log(`serving ${ROOT} at http://127.0.0.1:${PORT}/`));

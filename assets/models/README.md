@@ -28,7 +28,7 @@ Same as above with `player.glb` or `player/scene.gltf`. Notes:
 
 ## The prepared models in `game/` (what the game loads by default)
 
-The project owner supplied ten zips (kept in the vault at `Projects/The Long Draw/Prototype assets`). They are extracted into
+The prototype was built from ten downloaded art packs, which are not in this repository. They were extracted into
 `incoming/` (about 700 MB, never deploy or zip it) and trimmed for the browser by `node tools/prep-assets.mjs`, which writes
 `game/` (33 MB: models plus 512 to 2048 px albedo and normal maps). `src/models.js` loads them; every one is optional.
 

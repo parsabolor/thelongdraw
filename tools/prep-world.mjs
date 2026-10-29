@@ -7,11 +7,12 @@
 // grid (199.6 m square, 0..39 m of relief); heightmap (hx, hz) = world (x, z) + SITE, and world y = heightmap height - PAD_H.
 // The sim samples terrain at 1 m corners, so that is the resolution baked here: the visual mesh uses the same grid (anything finer would
 // only subdivide the same bilinear surface; the detail comes from the scan's normal map).
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const IN = `${ROOT}assets/models/incoming/`, OUT = `${ROOT}assets/world/`;
 const stage = process.argv[2];
 

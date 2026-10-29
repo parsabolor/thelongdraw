@@ -50,7 +50,7 @@ The simulation, level, tools and animation maths run in Node with no browser (`t
 | `src/survivor.js`, `held.js`, `fparms.js`, `ik.js`, `motion.js` | the player's body: a rig skinned onto a static model, procedural walk, crouch and stab, what it carries, first-person arms with two-bone IK |
 | `src/ragdoll.js`, `trees.js`, `detail.js`, `bow.js`, `models.js`, `characters.js`, `audio.js`, `materials.js` | ragdolls, instanced conifers, material detail, the first-person bow, model loading, procedural people (the fallback), sound, textures |
 | `tools/` | `serve.mjs` (the dev server) and the scripts that turn downloaded art into game files (`prep-*.mjs`, `fetch-*.mjs`) |
-| `dev/` | viewer pages for single parts (`dev/survivor.html`, `dev/trees.html`, `dev/bow.html`, ...) |
+| `dev/` | viewer pages for single parts (`dev/trees.html`, `dev/bow.html`, `dev/ragdoll.html`, ...; `dev/survivor.html` needs the survivor model, so it only works with your own art) |
 
 ## Art and licences
 

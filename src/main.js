@@ -89,7 +89,7 @@ let S = sim.createState(LEVEL, 1);
 
 // The terrain: the baked world (src/level.js terrainGrid): a smooth surface subdivided to 0.25 m cells within 60 m of the middle, the plain 1 m grid out to
 // 140 m (beyond the sim's own bounds the ground mirrors itself), textured with the supplied scan's colour and normal maps.
-const haveScan = await fetch('./assets/world/terrain_albedo.jpg', { method: 'HEAD' }).then((r) => r.ok).catch(() => false); // is the supplied scan's colour map there?
+const haveScan = await fetch('./assets/world/terrain_albedo.jpg', { method: 'HEAD' }).then((r) => r.ok && (r.headers.get('content-type') || '').startsWith('image/')).catch(() => false); // is the supplied scan's colour map there? (a server that answers every path with its index page does not count)
 function buildTerrain() {
   const grid = terrainGrid({ outer: 140, inner: 60, sub: 4 });
   const geo = new THREE.BufferGeometry();

@@ -3,10 +3,11 @@
 // Re-runnable: outputs that already exist are skipped. Only albedo and normal maps are kept (src/models.js wires those).
 // Not prepared on purpose: the 206 MB outpost scan / 54 MB terrain scan (too heavy for a browser).
 //   node tools/prep-assets.mjs
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, copyFileSync, existsSync, statSync } from 'node:fs';
 
-const IN = new URL('../assets/models/incoming/', import.meta.url).pathname, OUT = new URL('../assets/models/game/', import.meta.url).pathname;
+const IN = fileURLToPath(new URL('../assets/models/incoming/', import.meta.url)), OUT = fileURLToPath(new URL('../assets/models/game/', import.meta.url));
 // [source folder, model file inside it, output name, textures: [file in <source>/textures/, output name, max pixels]]
 const JOBS = [
   ['machete-sword-knife-17mb', 'source/sword.fbx', 'knife.fbx', [['BaseColor.png', 'knife_albedo.jpg', 512], ['Normal.png', 'knife_normal.jpg', 512]]],
