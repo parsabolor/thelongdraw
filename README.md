@@ -50,19 +50,15 @@ The simulation, level, tools and animation maths run in Node with no browser (`t
 | `src/survivor.js`, `held.js`, `fparms.js`, `ik.js`, `motion.js` | the player's body: a rig skinned onto a static model, procedural walk, crouch and stab, what it carries, first-person arms with two-bone IK |
 | `src/ragdoll.js`, `trees.js`, `detail.js`, `bow.js`, `models.js`, `characters.js`, `audio.js`, `materials.js` | ragdolls, instanced conifers, material detail, the first-person bow, model loading, procedural people (the fallback), sound, textures |
 | `tools/` | `serve.mjs` (the dev server) and the scripts that turn downloaded art into game files (`prep-*.mjs`, `fetch-*.mjs`) |
-| `dev/` | viewer pages for single parts (`dev/trees.html`, `dev/bow.html`, `dev/ragdoll.html`, ...; `dev/survivor.html` needs the survivor model, so it only works with your own art) |
+| `dev/` | viewer pages for single parts (`dev/survivor.html`, `dev/trees.html`, `dev/bow.html`, ...) |
 
 ## Art and licences
 
-**This repository holds code and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`).** The prototype was built and tuned with
-character, weapon, building and terrain art from downloads whose licences were never verified, so that art is **not** in this repository. Without it the game still
-runs: the people are the built-in procedural figures, the fort is textured boxes, the ground is a neutral rocky base with gravel detail, and the trees are generated in code.
-
-- `src/world-data.js` is the one piece derived from that art: a 201 x 201 heightmap (1 m grid) baked from a scanned terrain, which the level is laid out on. If the
-  source's licence does not allow this, replace it with terrain you have the rights to (the baking script is `node tools/prep-world.mjs terrain`).
-- To use your own art, see `assets/models/README.md`. The `tools/prep-*.mjs` scripts expect the original downloads under `assets/models/incoming/`; everything they
-  write (`assets/models/game/`, `assets/world/`) is git-ignored.
+- **What is in the repository:** the characters, weapons, bike, lookout hut, and the terrain and outpost scans, trimmed for the browser (`assets/models/game/`, `assets/world/`, 58 MB), and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`). The trees are generated in code.
+- **Licences:** the owner who downloaded that art says it is all under free licences that need no credit. The download packs carry no licence files, so this repository has no per-model licence record: if you reuse a model outside this project, check where it came from.
+- **What is not:** the raw downloads (about 800 MB, `assets/models/incoming/`), which are too large for git. `tools/prep-assets.mjs`, `prep-scout.mjs` and `prep-world.mjs` rebuild the trimmed files from them if you have them. `src/world-data.js` is baked from the terrain scan by `node tools/prep-world.mjs terrain`.
+- **Using your own art:** see `assets/models/README.md`. Every model is optional: delete one and the game falls back to a built-in stand-in (procedural people, a textured box for the fort, a neutral ground).
 
 ## Licence
 
-No licence has been chosen for this code yet, so all rights are reserved until the owner adds one. Three.js is MIT-licensed and is installed from npm.
+No licence has been chosen for this code yet, so all rights are reserved until the owner adds one. That is about the code; the art above has its own licences. Three.js is MIT-licensed and is installed from npm.

@@ -1,16 +1,16 @@
 # dependencies (npm install)
 node_modules/
 
-# Third-party art that came as downloads with licences that were never verified: kept out of the public repo (see README, "Art and licences").
-# The game runs without it (procedural stand-ins); tools/prep-*.mjs rebuild the processed files from the original downloads if you have them.
+# The raw art downloads (about 800 MB) and the models that were tried and not used. The trimmed files the game loads are in assets/models/game/ and assets/world/
+# (tools/prep-*.mjs rebuild them from the raw downloads if you have them).
 assets/models/incoming/
 assets/models/candidates/
-assets/models/game/
-assets/models/credits.txt
-assets/world/
 
 # scratch and OS files
 .DS_Store
 *.log
 *.tgz
 eval-out/
+
+# a debug intermediate that tools/prep-world.mjs writes next to the outpost
+assets/world/columns.json

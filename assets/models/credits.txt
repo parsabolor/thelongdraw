@@ -1,0 +1,2 @@
+Art supplied by the project owner (zombie, scout, survivor, kukri, arrow, motorcycle, lookout hut, compound bow, bow sight, terrain and outpost scans): free licences, no credit required.
+Trees are generated in code (src/trees.js). Ground and wall detail uses the CC0 Poly Haven textures in assets/textures (see CREDITS.md there).

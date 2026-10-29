@@ -9,7 +9,7 @@ procedural people. `src/models.js` does the loading; open the browser console to
    (CC Attribution, 4.6k faces, 16 animations). Log in to Sketchfab, press **Download 3D Model**, choose **glTF**.
 2. Either save a single file as `zombie.glb` here, or unzip the download so it reads `zombie/scene.gltf`
    (next to its `scene.bin` and `textures/` folder).
-3. The licence is CC BY 4.0, so the game must credit the author. Create `credits.txt` here containing:
+3. The licence is CC BY 4.0, so the game must credit the author. Add a line to `credits.txt` here (it exists already) containing:
 
        Zombie model: "ANIMATION ZOMBIE" by MUD (sketchfab.com/3d-models/animation-zombie-0d0b5b62fd8e48b9bd31f3769d2877e7), CC BY 4.0.
 
@@ -28,9 +28,9 @@ Same as above with `player.glb` or `player/scene.gltf`. Notes:
 
 ## The prepared models in `game/` (what the game loads by default)
 
-The prototype was built from ten downloaded art packs, which are not in this repository. They were extracted into
-`incoming/` (about 700 MB, never deploy or zip it) and trimmed for the browser by `node tools/prep-assets.mjs`, which writes
-`game/` (33 MB: models plus 512 to 2048 px albedo and normal maps). `src/models.js` loads them; every one is optional.
+The prototype was built from ten downloaded art packs. The raw downloads were extracted into `incoming/` (about 800 MB, not in the repository,
+never deploy or zip it) and trimmed for the browser by `node tools/prep-assets.mjs`, which writes `game/` (42 MB: models plus 512 to 2048 px
+albedo and normal maps; this folder is in the repository). `src/models.js` loads them; every one is optional.
 
 | File | What it is | Used as |
 |---|---|---|
@@ -43,8 +43,9 @@ The prototype was built from ten downloaded art packs, which are not in this rep
 | `game/scout.glb` | the owner's "dead man" (Blender export `zombie.glb`, 109k triangles, PBR + emission maps, one 11.7 s sway clip), prepared by `node tools/prep-scout.mjs` | the 3 scouts, on the vantage points (about 2 m tall, tinted slightly blue; it ragdolls like the others) |
 | `game/bow.fbx`, `game/sight.fbx` | compound bow (22 parts, 12k triangles) and the Avalon slider sight | the first-person bow and sight (`src/bow.js`); the pins stay procedural at the ballistics positions |
 
-**Licences are not verified.** The zips carry no licence file. They are prototype art only: check each model's licence (and credit it) before
-anything is shown outside the team or sold. The start screen says so (`credits.txt`).
+**Licences.** The owner who downloaded these packs says they are all under free licences that need no credit. The zips carry no licence file, so
+there is no per-model record here: if you reuse a model outside this project, check where it came from. The start screen says what the owner
+stated (`credits.txt`).
 
 ## The world: terrain and outpost scans (`assets/world/`, built by `tools/prep-world.mjs`)
 
