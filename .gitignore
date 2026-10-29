@@ -16,4 +16,4 @@ eval-out/
 assets/world/columns.json
 
 # the copy of three.js that the Vercel build makes (vercel.json)
-vendor/
+/vendor/
