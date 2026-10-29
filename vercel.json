@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --omit=dev",
+  "buildCommand": "mkdir -p dist/node_modules/three/examples && cp -R index.html src assets dist/ && cp -R node_modules/three/build dist/node_modules/three/ && cp -R node_modules/three/examples/jsm dist/node_modules/three/examples/",
+  "outputDirectory": "dist"
+}

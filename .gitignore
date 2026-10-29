@@ -14,3 +14,6 @@ eval-out/
 
 # a debug intermediate that tools/prep-world.mjs writes next to the outpost
 assets/world/columns.json
+
+# the Vercel build output (vercel.json)
+dist/
