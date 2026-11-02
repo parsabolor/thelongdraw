@@ -22,13 +22,14 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const optional = (path) => import(path).catch((e) => { console.warn(path + ' unavailable: ' + e.message); return null; });
 // Night atmosphere (src/fx.js): mist, drifting light motes, wind in the trees, frost glints. ?fx=0 turns it all off, ?fx=fog,motes,sway,glint picks some. The module is only
 // loaded when something is on, and each effect is built on its own, so one failing leaves the rest (and the game) running.
-const FX_ALL = ['fog', 'motes', 'sway', 'glint'], fxParam = new URLSearchParams(location.search).get('fx');
-const FX = new Set(fxParam === null ? FX_ALL : fxParam.split(',').filter((k) => FX_ALL.includes(k)));
+const FX_ALL = ['fog', 'motes', 'sway', 'glint'], fxParam = new URLSearchParams(location.search).get('fx') || '';
+const fxPicked = fxParam.split(',').map((k) => k.trim().toLowerCase()).filter((k) => FX_ALL.includes(k)); // anything unrecognised, even an empty ?fx=, means all on; only 0 or off turns them off
+const FX = new Set(fxParam === '0' || fxParam === 'off' ? [] : fxPicked.length ? fxPicked : FX_ALL);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; // no sway, no blinking
 const [audioMod, charMod, bowMod, bloomMod, modelMod, fxMod] = await Promise.all([
   optional('./audio.js'), optional('./characters.js'), optional('./bow.js'), optional('three/addons/tsl/display/BloomNode.js'), optional('./models.js'), FX.size ? optional('./fx.js') : null,
 ]);
-const fx = (name, build) => { if (!fxMod || !FX.has(name)) return; try { build(fxMod); } catch (err) { console.warn(`fx ${name} unavailable: ${err.message}`); } };
+const withFx = (name, build) => { if (!fxMod || !FX.has(name)) return; try { build(fxMod); } catch (err) { console.warn(`fx ${name} unavailable: ${err.message}`); } };
 // Downloaded character models from assets/models/ (see models.js); null where a file is not there.
 const models = modelMod ? await modelMod.loadModels() : { zombie: null, player: null, credits: '' };
 const bowAssets = bowMod ? await bowMod.loadBowAssets() : null; // the supplied compound bow and Avalon sight; null = the procedural bow
@@ -62,7 +63,8 @@ const cam = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 700)
 scene.add(cam);
 scene.background = new THREE.Color(0x070b14);
 scene.fog = new THREE.FogExp2(0x0b1222, 0.0105);
-fx('fog', (m) => { scene.fog = m.mistFog(); }); // a lighter blue-grey mist; the sky's horizon (skyTexture) is painted in the same colour so far ground fades into it
+let mist = null; // the mist colour (css) once the mist is on; the sky's horizon (skyTexture) is painted in the same colour so far ground fades into it
+withFx('fog', (f) => { scene.fog = f.mistFog(); mist = f.MIST_CSS; }); // a lighter blue-grey mist
 scene.add(new THREE.HemisphereLight(0x33477a, 0x10131a, 1.3));
 const MOON_DIR = new THREE.Vector3(-40, 70, -30).normalize();
 const moon = new THREE.DirectionalLight(0xa9bfff, 2.1);
@@ -87,13 +89,14 @@ function skyTexture(mist) { // a star field painted once, wrapped on a dome arou
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(fxMod && FX.has('fog') ? fxMod.MIST_CSS : null), side: THREE.BackSide, fog: false, depthWrite: false }));
+const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(mist), side: THREE.BackSide, fog: false, depthWrite: false }));
 const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(14, 24, 16), new THREE.MeshBasicMaterial({ color: 0xe6eeff, fog: false }));
 const moonGlow = new THREE.Mesh(new THREE.SphereGeometry(34, 24, 16), new THREE.MeshBasicMaterial({ color: 0x8fa8ff, fog: false, transparent: true, opacity: 0.16, depthWrite: false }));
 moonDisc.position.copy(MOON_DIR).multiplyScalar(380); moonGlow.position.copy(moonDisc.position);
 sky.renderOrder = -2;
 scene.add(sky, moonDisc, moonGlow);
-fx('motes', (m) => scene.add(m.createMotes({ reducedMotion }))); // slow fireflies and cold dust, all in the shader, around the camera
+let motes = null; // hidden in the binoculars (see the camera update): at zoom a mote becomes a large glare
+withFx('motes', (f) => scene.add((motes = f.createMotes({ reducedMotion })))); // slow fireflies and cold dust, all in the shader, around the camera
 
 // ---------- terrain, road, level boxes, props ----------
 let S = sim.createState(LEVEL, 1);
@@ -116,7 +119,7 @@ function buildTerrain() {
     : new THREE.MeshStandardMaterial({ map: white, color: 0x7a7066, roughness: 0.95, metalness: 0 });
   // the scan's colour map is 1024 px over 200 m (20 cm a texel): gravel detail at two scales, in world space, gives the ground its grain up close (src/detail.js)
   const mat = detailMaterial(scan, [{ map: mats.ground.map, meters: 4, strength: 0.9 }, { map: mats.ground.map, meters: 1.1, strength: 0.6 }]);
-  fx('glint', (m) => { if (mat.isNodeMaterial) mat.emissiveNode = m.frostGlint({ moonDir: MOON_DIR }); }); // sparse frost glints that flash as the view lines up with the moon (not when detailMaterial fell back to the plain material)
+  withFx('glint', (f) => { if (mat.isNodeMaterial) mat.emissiveNode = f.frostGlint({ moonDir: MOON_DIR }); }); // sparse frost glints that flash as the view lines up with the moon (not when detailMaterial fell back to the plain material)
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = mesh.castShadow = true; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -138,7 +141,7 @@ function buildProps() {
   const trees = S.level.props.filter((p) => p.kind === 'tree'), rocks = S.level.props.filter((p) => p.kind === 'rock');
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
   const forest = createTrees({ trees, barkMaterial: mats.bark, seed: 1 }); // src/trees.js: three seeded conifer variants, instanced (the sim only knows the trunk)
-  fx('sway', (m) => forest.traverse((o) => { if (o.isInstancedMesh) o.material = m.swayMaterial(o.material, { reducedMotion }); })); // wind in the crowns: one node-material copy per source material
+  withFx('sway', (f) => forest.traverse((o) => { if (o.isInstancedMesh) o.material = f.swayMaterial(o.material, { reducedMotion }); })); // wind in the crowns: one node-material copy per source material
   scene.add(forest);
   const rockGeo = new THREE.IcosahedronGeometry(1, 1), pa = rockGeo.attributes.position;
   for (let i = 0; i < pa.count; i++) { // lumpy boulders: displace by a hash of the vertex position, so shared corners move together
@@ -497,6 +500,7 @@ function updateCamera(dt) {
   const f = forward3(view.yaw + swayX, view.pitch + swayY);
   cam.lookAt(cam.position.x + f[0], cam.position.y + f[1], cam.position.z + f[2]);
   const fov = lerp(62, bino ? binoFov() : 40, camBlend);
+  if (motes) motes.visible = fov > 30; // not through the binoculars or a full draw
   if (Math.abs(cam.fov - fov) > 0.02) { cam.fov = fov; cam.updateProjectionMatrix(); }
   camPos[0] = cam.position.x; camPos[1] = cam.position.y; camPos[2] = cam.position.z;
   aimDir = f;

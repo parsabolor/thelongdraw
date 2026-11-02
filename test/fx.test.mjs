@@ -10,7 +10,8 @@ import { createFoliageMaterial } from '../src/trees.js';
 test('mist: a FogExp2 in the shared mist colour, dense enough that the terrain rim (140 m) is mostly fogged', () => {
   const f = mistFog();
   assert.ok(f.isFogExp2 && f.color.getHex() === MIST);
-  assert.equal(MIST_CSS, '#' + MIST.toString(16).padStart(6, '0'), 'the sky horizon uses the same colour as the fog');
+  assert.match(MIST_CSS, /^#[0-9a-f]{6}$/, 'a css colour the sky gradient can use');
+  assert.equal(parseInt(MIST_CSS.slice(1), 16), MIST, 'the sky horizon is painted in the fog colour');
   const at140 = 1 - Math.exp(-((f.density * 140) ** 2));
   assert.ok(at140 > 0.8 && at140 < 0.95, `fog factor at 140 m is ${at140.toFixed(2)}`);
 });
@@ -34,10 +35,10 @@ test('sway: the node copy keeps everything the needles and the bark need (alphaT
   assert.ok(src.alphaTest > 0 && m.alphaTest === src.alphaTest, 'without alphaTest the needles turn into solid cards (and their shadows)');
   assert.equal(m.color.getHex(), src.color.getHex()); assert.equal(m.emissive.getHex(), src.emissive.getHex());
   assert.equal(m.map, src.map); assert.equal(m.emissiveMap, src.emissiveMap);
-  const bark = new THREE.MeshStandardMaterial({ map: new THREE.Texture(), normalMap: new THREE.Texture(), roughnessMap: new THREE.Texture(), roughness: 0.9, color: 0x887766 });
+  const bark = new THREE.MeshStandardMaterial({ map: new THREE.Texture(), normalMap: new THREE.Texture(), roughnessMap: new THREE.Texture(), emissiveMap: new THREE.Texture(), roughness: 0.9, color: 0x887766 });
   bark.normalScale.set(0.5, 0.5);
   const b = swayMaterial(bark);
-  assert.ok(b.map === bark.map && b.normalMap === bark.normalMap && b.roughnessMap === bark.roughnessMap && b.roughness === 0.9);
+  assert.ok(b.map === bark.map && b.normalMap === bark.normalMap && b.roughnessMap === bark.roughnessMap && b.emissiveMap === bark.emissiveMap && b.roughness === 0.9);
   assert.deepEqual(b.normalScale.toArray(), [0.5, 0.5]);
   assert.equal(bark.positionNode, undefined, 'the shared source material is not touched');
 });

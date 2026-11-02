@@ -33,8 +33,8 @@ The wind (bottom right) pushes arrows sideways, more at range. Zombies hunt by s
 a zombie that hears a noise goes to look, then searches the area within 20 m of it.
 
 The night has a light mist in the distance, drifting fireflies and dust, wind in the pines and glints of frost on the ground, all drawn in the shader (`src/fx.js`, no extra
-files; about 3% of the frame rate). Add `?fx=0` to the address to turn them off, or `?fx=fog,motes,sway,glint` to pick some. The sway and the blinking stop if your system
-asks for reduced motion.
+files; a small cost in frame rate). Add `?fx=0` (or `?fx=off`) to the address to turn them off, or `?fx=fog,motes,sway,glint` to pick some. The sway and the blinking stop
+if your system asks for reduced motion, and the motes are hidden in the binoculars.
 
 ## Tests
 

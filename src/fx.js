@@ -11,7 +11,7 @@ import * as THREE from 'three/webgpu';
 import { float, vec2, vec3, time, hash, instanceIndex, cameraPosition, positionLocal, positionGeometry, positionWorld, normalWorld, uv, sin, cos, floor, mod, mix, smoothstep, pow, max, step, length, normalize, dot, reflect, clamp } from 'three/tsl';
 
 const TAU = Math.PI * 2;
-export const MIST = 0x22345a, MIST_CSS = '#22345a';
+export const MIST = 0x22345a, MIST_CSS = '#' + MIST.toString(16).padStart(6, '0');
 export const mistFog = (density = 0.0098) => new THREE.FogExp2(MIST, density);
 
 export function createMotes({ count = 700, half = 24, reducedMotion = false } = {}) {
@@ -69,7 +69,7 @@ export function frostGlint({ moonDir = new THREE.Vector3(-40, 70, -30), radius =
   const L = moonDir.clone().normalize();
   const toEye = cameraPosition.sub(positionWorld), dist = length(toEye), view = toEye.div(dist);
   const grid = positionWorld.xz.mul(12), cell = floor(grid); // cells of about 8 cm, each with its own tiny facet
-  const id = cell.x.mul(157).add(cell.y.mul(311)).add(600000); // a positive number to hash
+  const id = cell.x.mul(157).add(cell.y.mul(311)).add(600000); // a positive number to hash over the play area (only the far rim of the terrain goes negative, and `near` hides that)
   const a = hash(id.add(1)), b = hash(id.add(2)), c = hash(id.add(3));
   const facet = normalize(normalWorld.add(vec3(a, b, c).sub(0.5).mul(2.2)));
   const glint = pow(max(dot(reflect(view.negate(), facet), vec3(L.x, L.y, L.z)), 0), 40); // bright only where this facet mirrors the moon into the eye: it moves as you move, and does not flicker in time
