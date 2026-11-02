@@ -32,6 +32,10 @@ with its modification time. Use it rather than a plain static server: a browser 
 The wind (bottom right) pushes arrows sideways, more at range. Zombies hunt by sound and sight; scouts on high ground see far and call the others to where you are;
 a zombie that hears a noise goes to look, then searches the area within 20 m of it.
 
+The night has a light mist in the distance, drifting fireflies and dust, wind in the pines and glints of frost on the ground, all drawn in the shader (`src/fx.js`, no extra
+files; about 3% of the frame rate). Add `?fx=0` to the address to turn them off, or `?fx=fog,motes,sway,glint` to pick some. The sway and the blinking stop if your system
+asks for reduced motion.
+
 ## Tests
 
 ```sh
@@ -48,6 +52,7 @@ The simulation, level, tools and animation maths run in Node with no browser (`t
 | `src/level.js`, `src/world-data.js` | the outpost as data (fort collision, spawns, patrol points) over a baked heightmap (`world-data.js` is generated) |
 | `src/main.js` | rendering, input, the HUD and the minimap; the game rules stay in `sim.js` |
 | `src/survivor.js`, `held.js`, `fparms.js`, `ik.js`, `motion.js` | the player's body: a rig skinned onto a static model, procedural walk, crouch and stab, what it carries, first-person arms with two-bone IK |
+| `src/fx.js` | the night's atmosphere as shader builders: mist, light motes, tree sway, frost glints (loaded only when on; `main.js` composes them) |
 | `src/ragdoll.js`, `trees.js`, `detail.js`, `bow.js`, `models.js`, `characters.js`, `audio.js`, `materials.js` | ragdolls, instanced conifers, material detail, the first-person bow, model loading, procedural people (the fallback), sound, textures |
 | `tools/` | `serve.mjs` (the dev server) and the scripts that turn downloaded art into game files (`prep-*.mjs`, `fetch-*.mjs`) |
 | `dev/` | viewer pages for single parts (`dev/survivor.html`, `dev/trees.html`, `dev/bow.html`, ...) |

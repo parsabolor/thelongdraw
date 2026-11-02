@@ -20,9 +20,15 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 // Sound, character and bow-model modules are optional: each falls back if its file is missing.
 const optional = (path) => import(path).catch((e) => { console.warn(path + ' unavailable: ' + e.message); return null; });
-const [audioMod, charMod, bowMod, bloomMod, modelMod] = await Promise.all([
-  optional('./audio.js'), optional('./characters.js'), optional('./bow.js'), optional('three/addons/tsl/display/BloomNode.js'), optional('./models.js'),
+// Night atmosphere (src/fx.js): mist, drifting light motes, wind in the trees, frost glints. ?fx=0 turns it all off, ?fx=fog,motes,sway,glint picks some. The module is only
+// loaded when something is on, and each effect is built on its own, so one failing leaves the rest (and the game) running.
+const FX_ALL = ['fog', 'motes', 'sway', 'glint'], fxParam = new URLSearchParams(location.search).get('fx');
+const FX = new Set(fxParam === null ? FX_ALL : fxParam.split(',').filter((k) => FX_ALL.includes(k)));
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; // no sway, no blinking
+const [audioMod, charMod, bowMod, bloomMod, modelMod, fxMod] = await Promise.all([
+  optional('./audio.js'), optional('./characters.js'), optional('./bow.js'), optional('three/addons/tsl/display/BloomNode.js'), optional('./models.js'), FX.size ? optional('./fx.js') : null,
 ]);
+const fx = (name, build) => { if (!fxMod || !FX.has(name)) return; try { build(fxMod); } catch (err) { console.warn(`fx ${name} unavailable: ${err.message}`); } };
 // Downloaded character models from assets/models/ (see models.js); null where a file is not there.
 const models = modelMod ? await modelMod.loadModels() : { zombie: null, player: null, credits: '' };
 const bowAssets = bowMod ? await bowMod.loadBowAssets() : null; // the supplied compound bow and Avalon sight; null = the procedural bow
@@ -56,6 +62,7 @@ const cam = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 700)
 scene.add(cam);
 scene.background = new THREE.Color(0x070b14);
 scene.fog = new THREE.FogExp2(0x0b1222, 0.0105);
+fx('fog', (m) => { scene.fog = m.mistFog(); }); // a lighter blue-grey mist; the sky's horizon (skyTexture) is painted in the same colour so far ground fades into it
 scene.add(new THREE.HemisphereLight(0x33477a, 0x10131a, 1.3));
 const MOON_DIR = new THREE.Vector3(-40, 70, -30).normalize();
 const moon = new THREE.DirectionalLight(0xa9bfff, 2.1);
@@ -66,10 +73,11 @@ moon.shadow.bias = -0.0005;
 moon.shadow.normalBias = 0.04;
 scene.add(moon, moon.target);
 
-function skyTexture() { // a star field painted once, wrapped on a dome around the camera
+function skyTexture(mist) { // a star field painted once, wrapped on a dome around the camera. `mist`: the fog's colour (css), which the sky takes on from 36 degrees up down to the horizon and below, so far ground fades into it with no seam
   const c = document.createElement('canvas'); c.width = 4096; c.height = 2048;
   const g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, 0, 2048);
-  grad.addColorStop(0, '#03050b'); grad.addColorStop(0.55, '#09112a'); grad.addColorStop(1, '#16223f');
+  if (mist) { grad.addColorStop(0, '#03050b'); grad.addColorStop(0.3, '#08102a'); grad.addColorStop(0.5, mist); grad.addColorStop(1, mist); } // the horizon is the middle row
+  else { grad.addColorStop(0, '#03050b'); grad.addColorStop(0.55, '#09112a'); grad.addColorStop(1, '#16223f'); }
   g.fillStyle = grad; g.fillRect(0, 0, 4096, 2048);
   let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 2600; i++) {
@@ -79,12 +87,13 @@ function skyTexture() { // a star field painted once, wrapped on a dome around t
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false }));
+const sky = new THREE.Mesh(new THREE.SphereGeometry(450, 32, 16), new THREE.MeshBasicMaterial({ map: skyTexture(fxMod && FX.has('fog') ? fxMod.MIST_CSS : null), side: THREE.BackSide, fog: false, depthWrite: false }));
 const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(14, 24, 16), new THREE.MeshBasicMaterial({ color: 0xe6eeff, fog: false }));
 const moonGlow = new THREE.Mesh(new THREE.SphereGeometry(34, 24, 16), new THREE.MeshBasicMaterial({ color: 0x8fa8ff, fog: false, transparent: true, opacity: 0.16, depthWrite: false }));
 moonDisc.position.copy(MOON_DIR).multiplyScalar(380); moonGlow.position.copy(moonDisc.position);
 sky.renderOrder = -2;
 scene.add(sky, moonDisc, moonGlow);
+fx('motes', (m) => scene.add(m.createMotes({ reducedMotion }))); // slow fireflies and cold dust, all in the shader, around the camera
 
 // ---------- terrain, road, level boxes, props ----------
 let S = sim.createState(LEVEL, 1);
@@ -107,6 +116,7 @@ function buildTerrain() {
     : new THREE.MeshStandardMaterial({ map: white, color: 0x7a7066, roughness: 0.95, metalness: 0 });
   // the scan's colour map is 1024 px over 200 m (20 cm a texel): gravel detail at two scales, in world space, gives the ground its grain up close (src/detail.js)
   const mat = detailMaterial(scan, [{ map: mats.ground.map, meters: 4, strength: 0.9 }, { map: mats.ground.map, meters: 1.1, strength: 0.6 }]);
+  fx('glint', (m) => { if (mat.isNodeMaterial) mat.emissiveNode = m.frostGlint({ moonDir: MOON_DIR }); }); // sparse frost glints that flash as the view lines up with the moon (not when detailMaterial fell back to the plain material)
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = mesh.castShadow = true; mesh.frustumCulled = false;
   scene.add(mesh);
@@ -127,7 +137,9 @@ for (const b of LEVEL.boxes) {
 function buildProps() {
   const trees = S.level.props.filter((p) => p.kind === 'tree'), rocks = S.level.props.filter((p) => p.kind === 'rock');
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
-  scene.add(createTrees({ trees, barkMaterial: mats.bark, seed: 1 })); // src/trees.js: three seeded conifer variants, instanced (the sim only knows the trunk)
+  const forest = createTrees({ trees, barkMaterial: mats.bark, seed: 1 }); // src/trees.js: three seeded conifer variants, instanced (the sim only knows the trunk)
+  fx('sway', (m) => forest.traverse((o) => { if (o.isInstancedMesh) o.material = m.swayMaterial(o.material, { reducedMotion }); })); // wind in the crowns: one node-material copy per source material
+  scene.add(forest);
   const rockGeo = new THREE.IcosahedronGeometry(1, 1), pa = rockGeo.attributes.position;
   for (let i = 0; i < pa.count; i++) { // lumpy boulders: displace by a hash of the vertex position, so shared corners move together
     const h = Math.abs(Math.sin(pa.getX(i) * 91.7 + pa.getY(i) * 47.3 + pa.getZ(i) * 13.1) * 43758.5453) % 1;
