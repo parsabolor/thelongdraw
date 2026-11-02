@@ -5,7 +5,8 @@
 //   node tools/prep-assets.mjs
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, copyFileSync, existsSync, statSync } from 'node:fs';
+import { mkdirSync, copyFileSync, existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { stripFbxMedia } from './strip-fbx-media.mjs';
 
 const IN = fileURLToPath(new URL('../assets/models/incoming/', import.meta.url)), OUT = fileURLToPath(new URL('../assets/models/game/', import.meta.url));
 // [source folder, model file inside it, output name, textures: [file in <source>/textures/, output name, max pixels]]
@@ -27,7 +28,10 @@ const kb = (p) => Math.round(statSync(p).size / 1024) + ' KB';
 for (const [dir, model, name, textures] of JOBS) {
   const src = `${IN}${dir}/`;
   if (!existsSync(src + model)) { console.log(`MISSING ${dir}/${model} (extract the zip into assets/models/incoming/${dir}/ first)`); continue; }
-  if (!existsSync(OUT + name)) copyFileSync(src + model, OUT + name);
+  if (!existsSync(OUT + name)) { // the textures are resized below and loaded from their own files, so the full-size copies embedded in an FBX are download weight only
+    copyFileSync(src + model, OUT + name);
+    if (name.endsWith('.fbx')) writeFileSync(OUT + name, stripFbxMedia(readFileSync(OUT + name)));
+  }
   console.log(`${name.padEnd(28)} ${kb(OUT + name)}`);
   for (const [file, out, px] of textures) {
     if (!existsSync(src + 'textures/' + file)) { console.log(`MISSING ${dir}/textures/${file}`); continue; }

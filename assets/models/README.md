@@ -29,8 +29,10 @@ Same as above with `player.glb` or `player/scene.gltf`. Notes:
 ## The prepared models in `game/` (what the game loads by default)
 
 The prototype was built from ten downloaded art packs. The raw downloads were extracted into `incoming/` (about 800 MB, not in the repository,
-never deploy or zip it) and trimmed for the browser by `node tools/prep-assets.mjs`, which writes `game/` (42 MB: models plus 512 to 2048 px
-albedo and normal maps; this folder is in the repository). `src/models.js` loads them; every one is optional.
+never deploy or zip it) and trimmed for the browser by `node tools/prep-assets.mjs`, which writes `game/` (30 MB: models plus 512 to 2048 px
+albedo and normal maps; this folder is in the repository). It also strips the full-size textures that some FBX files embed
+(`tools/strip-fbx-media.mjs`: the survivor was 13 MB, 11 MB of it unused images), because the page downloads these files on every first visit.
+`src/models.js` loads them; every one is optional.
 
 | File | What it is | Used as |
 |---|---|---|

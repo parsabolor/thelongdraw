@@ -26,9 +26,11 @@ const [audioMod, charMod, bowMod, bloomMod, modelMod] = await Promise.all([
 // Downloaded character models from assets/models/ (see models.js); null where a file is not there.
 const models = modelMod ? await modelMod.loadModels() : { zombie: null, player: null, credits: '' };
 const bowAssets = bowMod ? await bowMod.loadBowAssets() : null; // the supplied compound bow and Avalon sight; null = the procedural bow
-// Props (knife, arrow, bike, hut) are bigger and optional, so they load after the first frame and are used as they arrive.
+// Props (knife, arrow, bike, hut) and the outpost scan are the big optional downloads (about 25 MB), so they start only once the start screen is up and are used as they
+// arrive. Started earlier they take bandwidth from what the first frame needs, and on a slow link that is minutes of "Loading".
 const props = {};
-const propsReady = modelMod ? modelMod.loadProps().then((p) => Object.assign(props, p)).catch((e) => console.warn('props: ' + e.message)) : Promise.resolve();
+let startBackgroundLoads; const backgroundLoads = new Promise((r) => (startBackgroundLoads = r));
+const propsReady = backgroundLoads.then(() => (modelMod ? modelMod.loadProps().then((p) => Object.assign(props, p)).catch((e) => console.warn('props: ' + e.message)) : undefined));
 
 // ---------- renderer (WebGPU, with Three's automatic WebGL2 fallback) ----------
 const canvas = $('view');
@@ -243,7 +245,7 @@ propsReady.then(() => {
   }
 });
 // The outpost: the cleaned scan (assets/world/outpost.glb, built by tools/prep-world.mjs) in the world frame; the grey collision boxes it stands in for are hidden.
-if (modelMod) modelMod.loadOutpost().then((fort) => {
+if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost()).then((fort) => {
   if (!fort) return;
   // the scan's wall texture is soft, so stone and plaster detail goes over it (src/detail.js)
   fort.traverse((o) => { if (o.isMesh) o.material = detailMaterial(o.material, [{ map: mats.concrete.map, meters: 1.0, strength: 1 }, { map: mats.rock.map, meters: 0.45, strength: 0.9 }]); });
@@ -372,6 +374,7 @@ $('help').textContent = HELP;
 const creditsHtml = models.credits ? `<p style="font-size:11px">${models.credits.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>` : '';
 showScreen(`<h1>The Long Draw: Outpost Prototype</h1><p>Clear the outpost with planned shots. The dead hunt by sound.</p><pre>${HELP}</pre><p><b>Click to play</b></p>${creditsHtml}`);
 $('badge').textContent = backend;
+startBackgroundLoads(); // the start screen is up: the props and the outpost can download now
 
 const audio = audioMod ? audioMod.createAudio() : null;
 

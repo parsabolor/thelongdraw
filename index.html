@@ -64,6 +64,21 @@
     <p id="loadmsg">Loading renderer…</p>
   </div>
 </div>
+<script>
+// Download progress for the first load. The art is tens of MB, so on a slow link a fixed "Loading renderer..." looks like a hang. This counts the bytes of the finished
+// requests; main.js replaces #loadmsg with the start screen (or an error), and from then on this stops.
+(function () {
+  var el = document.getElementById('loadmsg'); if (!el || !window.PerformanceObserver) return;
+  var mb = 0, n = 0, last = el.textContent, t0 = performance.now(), po, tick;
+  function show() {
+    if (!el.isConnected || el.textContent !== last) { po.disconnect(); clearInterval(tick); return; }
+    last = el.textContent = 'Loading… ' + mb.toFixed(1) + ' MB downloaded (' + n + ' files)' + (performance.now() - t0 > 6000 ? '. The first visit downloads the game’s art, which takes a while on a slow connection.' : '');
+  }
+  po = new PerformanceObserver(function (list) { list.getEntries().forEach(function (e) { mb += (e.encodedBodySize || e.transferSize || 0) / 1048576; n++; }); show(); });
+  try { po.observe({ type: 'resource', buffered: true }); } catch (e) { return; }
+  tick = setInterval(show, 1000); // the hint appears after a few seconds even while one big file is still downloading
+})();
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
