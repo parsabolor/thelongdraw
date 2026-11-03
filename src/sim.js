@@ -22,7 +22,7 @@ export const TUNING = {
   roles: {
     hunter: { sight: 20, fov: 100, hear: 1, patrol: true },
     // scout: stands on a vantage point, sees far (and down from up there: vert is how far above or below itself it can see, 4 m for the rest)
-    // and reports where the player is to every zombie that can hear the call; see alertEnter and the alert case of stepZombie
+    // and, the moment it is sure it sees the player, tells every awake zombie where they are (scoutCall); see alertEnter and the alert case of stepZombie
     // gain: how fast its sight fills the awareness meter, against 1 for the others (it sees far, but it takes a moment to be sure)
     scout: { sight: 40, fov: 80, hear: 1.6, patrol: false, vert: 40, gain: 0.6 },
     sleeper: { sight: 0, fov: 0, hear: 0.6, patrol: true, wake: 0.5 },

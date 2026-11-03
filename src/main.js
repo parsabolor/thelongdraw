@@ -34,7 +34,7 @@ const withFx = (name, build) => { if (!fxMod || !FX.has(name)) return; try { bui
 // Downloaded character models from assets/models/ (see models.js); null where a file is not there.
 const models = modelMod ? await modelMod.loadModels() : { zombie: null, player: null, credits: '' };
 const bowAssets = bowMod ? await bowMod.loadBowAssets() : null; // the supplied compound bow and Avalon sight; null = the procedural bow
-// Props (knife, arrow, bike, hut) and the outpost scan are the big optional downloads (about 25 MB), so they start only once the start screen is up and are used as they
+// Props (knife, arrow, bike, tower) and the outpost scan are the big optional downloads (about 25 MB), so they start only once the start screen is up and are used as they
 // arrive. Started earlier they take bandwidth from what the first frame needs, and on a slow link that is minutes of "Loading".
 const props = {};
 let startBackgroundLoads; const backgroundLoads = new Promise((r) => (startBackgroundLoads = r));
@@ -240,7 +240,7 @@ function poseKnife(dt) {
 }
 
 // The bike waits at the start (a visual: E there bails out, the sim does not collide with it). Its model's long axis is X, nose toward +X;
-// a quarter turn points it north, up the road into the outpost. The hut replaces the grey box that stands for it in the level.
+// a quarter turn points it north, up the road into the outpost.
 propsReady.then(() => {
   const ground = (x, z) => sim.heightAt(S.level, x, z);
   if (props.bike) {

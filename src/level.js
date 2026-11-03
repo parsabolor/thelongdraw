@@ -101,7 +101,6 @@ const START = { x: -43, z: 31, yaw: face(-43, 31) };
 const BIKE = { x: -40, z: 33 };
 const SPAWNS = [
   ...TOWERS.map((t) => ({ role: 'scout', x: t.x, z: t.z, y: t.base + TOWER.deck, yaw: t.yaw })), // south-east plateau, east rim over the pad, north ridge
-
   { role: 'hunter', x: -25, z: 16, yaw: 0, patrol: [[-25, 16], [-14, 22], [-16, 6], [-31, 17]] },   // the valley, first contact
   { role: 'hunter', x: -10, z: 12, yaw: 0, patrol: [[-10, 12], [-16, 6], [-11, 0], [-14, 13]] },    // west of the fort
   { role: 'hunter', x: 13, z: 12, yaw: 0, patrol: [[13, 12], [8, 14], [4, 12], [12, 6]] },          // at the foot of the escarpment
