@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { pass } from 'three/tsl';
 import { LEVEL, terrainGrid } from './level.js';
+import { CUTS } from './shell-data.js';
 import { WORLD } from './world-data.js';
 import * as sim from './sim.js';
 import { loadMaterials, boxUV } from './materials.js';
@@ -128,6 +129,7 @@ buildTerrain();
 
 const skinBoxes = {}; // boxes that a loaded model stands in for (b.skin = the model's name): grey boxes until it arrives, and if it never does
 for (const b of LEVEL.boxes) {
+  if (b.mode === 'sight') continue; // blocks rays only (the scan's thin walls): nothing to draw
   const w = b.x1 - b.x0, h = b.y1 - b.y0, d = b.z1 - b.z0, mat = mats[b.tag === 'dirt' ? 'rock' : b.tag];
   const geo = boxUV(new THREE.BoxGeometry(w, h, d), w, h, d, mat.userData.tileMeters);
   const mesh = new THREE.Mesh(geo, mat);
@@ -260,7 +262,7 @@ propsReady.then(() => {
   }
 });
 // The outpost: the cleaned scan (assets/world/outpost.glb, built by tools/prep-world.mjs) in the world frame; the grey collision boxes it stands in for are hidden.
-if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost()).then((fort) => {
+if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost(CUTS)).then((fort) => {
   if (!fort) return;
   // the scan's wall texture is soft, so stone and plaster detail goes over it (src/detail.js)
   fort.traverse((o) => { if (o.isMesh) o.material = detailMaterial(o.material, [{ map: mats.concrete.map, meters: 1.0, strength: 1 }, { map: mats.rock.map, meters: 0.45, strength: 0.9 }]); });
@@ -720,6 +722,7 @@ function drawMini() {
   c.translate(MW / 2, MW / 2); c.scale(MS, MS); c.translate(-P.x, -P.z);
   c.drawImage(shade, -64, -64, 128, 128);
   for (const b of LEVEL.boxes) {
+    if (b.mode === 'sight') continue; // the scan's thin walls: the body boxes already show the footprint
     c.fillStyle = b.y0 > 0 ? 'rgba(130,145,155,.25)' : b.y1 >= 2.5 ? '#7b8a95' : '#4a565e';
     c.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
   }

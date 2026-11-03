@@ -4,6 +4,8 @@
 // Two views of the level, kept apart on purpose:
 //   - a baked 1 m heightfield for movement and path finding (buildLevel, once)
 //   - the raw boxes for line of sight, noise occlusion and arrows
+// A box may say which view it belongs to: `mode: 'sight'` blocks only rays (a thin wall with window slots, which would fill whole 1 m cells if it also blocked
+// bodies), `mode: 'body'` blocks only bodies (cells aligned for walking through a doorway); no mode, both.
 // Constraint: no walkable surface above another (see level.js); buildLevel() throws on a floating box.
 
 export const TUNING = {
@@ -15,7 +17,7 @@ export const TUNING = {
   loud: { stepCrouch: 0.05, stepWalk: 0.15, stepRun: 0.35, release: 0.25, soft: 0.35, hard: 0.6, metal: 0.8, kill: 0.1, wound: 0.9, scream: 1, call: 0.8, whistle: 0.4, rummage: 0.08, landPerM: 0.12 },
   bell: { period: 8, ring: 1.6, mask: 0.4 },
   wind: { drift: 0.45 }, // arrow acceleration per m/s of wind: 6 m/s moves a full-draw arrow ~0.5 m sideways at 40 m and ~1.1 m at 60 m
-  aware: { suspicious: 0.3, alert: 0.8, decay: 0.05, sightGain: 1.1, hearGain: 1.5, close: 3, occlude: 0.5, expose: { crouch: 0.5, still: 0.7, walk: 1, run: 1.5 } },
+  aware: { suspicious: 0.3, alert: 0.8, decay: 0.05, sightGain: 1.1, hearGain: 1.5, told: 0.45, close: 3, occlude: 0.5, expose: { crouch: 0.5, still: 0.7, walk: 1, run: 1.5 } },
   zombie: { walk: 1.1, run: 3.4, pack: 12, scoutReport: 3, radius: 0.35, attackRange: 1.3, attackCd: 1, hp: 2, loseTime: 3, search: [30, 90], searchRadius: 20, investigate: [15, 30], caution: 30, cautionSens: 1.5, down: 0.6, wait: [2, 4], suspiciousWait: 3.5 },
   roles: {
     hunter: { sight: 20, fov: 100, hear: 1, patrol: true },
@@ -62,6 +64,7 @@ export function buildLevel(def) {
   for (let iz = 0; iz <= d; iz++) for (let ix = 0; ix <= w; ix++) ter[iz * W + ix] = T(x0 + ix, z0 + iz);
   const obs = new Float32Array(w * d).fill(-Infinity), obsTag = new Array(w * d).fill(null); // -Infinity = nothing there (0 would lift ground below the pad)
   for (const b of def.boxes) {
+    if (b.mode === 'sight') continue; // rays only: no cell of the movement grid
     if (!(b.y0 === 0 || b.y0 >= 2.5)) throw new Error('box floats between 0 and 2.5 m: ' + JSON.stringify(b));
     if (b.y0 > 0) continue; // overhead: not walkable
     const ix0 = Math.max(0, Math.floor(b.x0 - x0)), ix1 = Math.min(w, Math.ceil(b.x1 - x0));
@@ -112,7 +115,7 @@ export function buildLevel(def) {
     }
     for (let i = 0; i < w * d; i++) if (!reach[i] && obs[i] === -Infinity) { obs[i] = Infinity; obsTag[i] = 'rock'; h[i] = Infinity; sealed++; } // boxes and props keep their own height
   }
-  return { boxes: def.boxes, props, x0, z0, w, d, ter, obs, obsTag, h, patrol: def.patrol || [], tag: def.terrainTag || (() => 'dirt'), limit, minY, sealed };
+  return { boxes: def.boxes.filter((b) => b.mode !== 'body'), props, x0, z0, w, d, ter, obs, obsTag, h, patrol: def.patrol || [], tag: def.terrainTag || (() => 'dirt'), limit, minY, sealed };
 }
 
 const cellIndex = (L, x, z) => {
@@ -398,8 +401,12 @@ function hear(S, zb, x, y, z, loud, src, target) {
   let s = loud * (1 - d / range) * rp.hear * zb.sens;
   if (!hasLOS(S.level, x, y, z, zb.x, zb.y + 1.6, zb.z)) s *= T.aware.occlude;
   if (src === 'player' && S.bell.ring) s *= T.bell.mask;
-  const gain = s * T.aware.hearGain;
-  zb.heardT = S.t; zb.lastStim = S.t; zb.stim = target ? { x: target.x, z: target.z } : { x, z };
+  heard(S, zb, s * T.aware.hearGain, target ? { x: target.x, z: target.z } : { x, z });
+}
+// What a zombie does with a stimulus of strength `gain` that points at `stim`: its awareness grows, and whatever it is doing is pointed at the spot.
+function heard(S, zb, gain, stim) {
+  const T = TUNING, rp = T.roles[zb.role];
+  zb.heardT = S.t; zb.lastStim = S.t; zb.stim = stim;
   zb.meter = Math.min(1, zb.meter + gain);
   if (zb.state === 'dormant') { if (gain >= rp.wake) wake(S, zb); return; }
   if (zb.state === 'suspicious') { zb.point = zb.stim; zb.arrived = false; zb.timer = 0; zb.leg = 0; }
@@ -431,15 +438,25 @@ function alertEnter(S, z) {
   if (!z.lkp) z.lkp = z.stim || { x: S.player.x, z: S.player.z };
   z.seenT = Math.max(z.seenT, S.t - 0.1);
   S.events.push({ type: 'alert', id: z.id, x: z.x, y: z.y + 1.6, z: z.z });
-  if (z.role === 'scout') { z.report = TUNING.zombie.scoutReport; emitNoise(S, z.x, z.y + 1.6, z.z, TUNING.loud.call, 'call', 'zombie', z.id, z.lkp); }
+  if (z.role === 'scout') { z.report = TUNING.zombie.scoutReport; scoutCall(S, z, z.lkp); }
   else if (z.kind === 'screamer' && !z.screamed) { z.screamed = true; emitNoise(S, z.x, z.y + 1.6, z.z, TUNING.loud.scream, 'scream', 'zombie', z.id, z.lkp); }
   else packPull(S, z);
 }
+// A scout shouts (a noise, for the audio and for anyone close enough to hear it the ordinary way). If it SEES the player, the shout also tells every awake zombie where
+// the player is, however far and whatever stands in the way: scouts are posted far from the others, and the falloff of a noise (48 m at best, less behind a wall) never
+// reached them. A scout that only heard or was hit has nothing to report: only the plain noise.
+function scoutCall(S, z, at) {
+  emitNoise(S, z.x, z.y + 1.6, z.z, TUNING.loud.call, 'call', 'zombie', z.id, at);
+  if (!z.sees || !at) return;
+  for (const o of S.zombies) if (o !== z && o.role !== 'scout' && o.state !== 'dead' && o.state !== 'dormant') told(S, o, at);
+}
+// Told where the player is (by a scout's report): it has a reason to go and look, and whatever it was doing now points at that spot.
+function told(S, o, at) { heard(S, o, Math.max(0, TUNING.aware.told - o.meter), { x: at.x, z: at.z }); }
 // A hunter that finds the player pulls the hunters around it toward the same spot (suspicious, not alert).
 function packPull(S, z) {
   for (const o of S.zombies) {
     if (o === z || o.state === 'dead' || o.state === 'dormant' || o.state === 'alert' || o.role === 'scout') continue;
-    if (hyp(o.x - z.x, o.z - z.z) < TUNING.zombie.pack) { o.meter = Math.max(o.meter, 0.45); o.stim = z.lkp; o.lastStim = S.t; o.heardT = S.t; }
+    if (hyp(o.x - z.x, o.z - z.z) < TUNING.zombie.pack) { o.meter = Math.max(o.meter, TUNING.aware.told); o.stim = z.lkp; o.lastStim = S.t; o.heardT = S.t; }
   }
 }
 // A zombie that hears a noise or loses the player searches the AREA, not the one spot: it picks points within `searchRadius` (20 m) of the centre, each time
@@ -593,7 +610,7 @@ function stepZombie(S, z, dt) {
         z.report -= dt;
         if (sees && z.report <= 0) { // keeps reporting while it can see you, with where you are NOW, so the others follow you
           z.report = Z.scoutReport;
-          emitNoise(S, z.x, z.y + 1.6, z.z, T.loud.call, 'call', 'zombie', z.id, { x: P.x, z: P.z });
+          scoutCall(S, z, { x: P.x, z: P.z });
         }
         if (!sees && S.t - z.seenT > Z.loseTime) cautionEnter(S, z);
         break;

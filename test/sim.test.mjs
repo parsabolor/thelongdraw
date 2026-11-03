@@ -400,3 +400,65 @@ test('events carry what audio needs: surface tags, alert and bell positions', ()
     assert.ok(e && [e.x, e.y, e.z].every(Number.isFinite), `${type} event has a position`);
   }
 });
+
+// A scout is posted far from the other zombies, so its shout used to fade out before it reached them (a noise of 0.8 carries 48 m and its strength falls off with
+// distance, to half again behind a wall: a hunter 30 m away was not even made suspicious).
+const wide = (spawns, boxes = []) => ({ ...open(spawns, boxes), bounds: { x0: -60, z0: -60, w: 120, d: 120 } });
+const scoutAt = { role: 'scout', x: 0, z: 0, yaw: 0 }; // looks toward +z; the player stands at z = 24
+const awayFrom = (x, z) => hunter(x, z, Math.PI); // facing away from the scout and the player, so it cannot see them
+const untilAlert = (S, max = 3600) => { for (let i = 0; i < max && S.zombies[0].state !== 'alert'; i++) step(S, idle); };
+
+test('a scout that sees the player tells every awake zombie where they are, however far and whatever is in the way', () => {
+  const wall = { x0: -60, x1: 60, z0: -20, z1: -19, y0: 0, y1: 4, tag: 'concrete' }; // across the whole level, between the scout and the others
+  for (const boxes of [[], [wall]]) {
+    const S = createState(wide([scoutAt, awayFrom(35, -35), awayFrom(0, -58), awayFrom(-55, -55), { role: 'sleeper', x: 20, z: -30, yaw: 0 }], boxes), 1);
+    S.player.x = 0; S.player.z = 24;
+    untilAlert(S);
+    assert.equal(S.zombies[0].state, 'alert', 'the scout sees the player');
+    run(S, 0.4);
+    for (const h of S.zombies.slice(1, 4)) { // 49, 58 and 78 m from the scout
+      assert.ok(h.stim && Math.hypot(h.stim.x - 0, h.stim.z - 24) < 0.5, `told where the player is (${boxes.length ? 'behind a wall' : 'in the open'})`);
+      assert.notEqual(h.state, 'idle', 'and it reacts');
+    }
+    assert.equal(S.zombies[4].state, 'dormant', 'a sleeper is not woken by a shout');
+  }
+});
+
+test('a scout call re-points zombies that are already investigating, searching or hunting out of sight', () => {
+  const S = createState(wide([scoutAt, awayFrom(35, -35), awayFrom(0, -50), awayFrom(-45, -40)]), 1);
+  S.player.x = 0; S.player.z = 24;
+  const [, sus, sea, alr] = S.zombies, elsewhere = { x: -50, z: -50 };
+  sus.state = 'suspicious'; sus.point = { ...elsewhere }; sus.meter = 0.4;
+  sea.state = 'search'; sea.searchC = { ...elsewhere }; sea.point = { ...elsewhere }; sea.timer = 25; sea.meter = 0.4;
+  alr.state = 'alert'; alr.meter = 1; alr.lkp = { ...elsewhere }; alr.seenT = S.t;
+  S.zombies[0].meter = 0.79; // about to be sure of the player, so the states set up above have not drifted by the time it calls
+  untilAlert(S);
+  run(S, 0.4);
+  const near = (p) => p && Math.hypot(p.x - 0, p.z - 24) < 0.5;
+  assert.ok(near(sus.point), 'the investigator walks to where the player is now');
+  assert.ok(near(sea.searchC), 'the searcher searches round the player');
+  assert.ok(near(alr.lkp), 'the hunter that lost the player is told where they are');
+});
+
+test('a scout that only heard something does not tell the others where the player is', () => {
+  const S = createState(wide([scoutAt, hunter(35, -35, 0), hunter(0, -58, 0), hunter(-55, -55, 0)]), 1); // they look toward +z, so the player behind them is out of their sight
+  S.player.x = 40; S.player.z = -59; // far behind the scout: it cannot see them
+  emitNoise(S, 0, 1, -3, 1, 'scream', 'world'); // a loud noise right behind the scout: it turns alert on hearing, not on seeing
+  for (let i = 0; i < 60; i++) step(S, idle);
+  assert.equal(S.zombies[0].state, 'alert');
+  assert.equal(S.zombies[0].sees, false);
+  for (const h of S.zombies.slice(1)) assert.ok(!h.stim || Math.hypot(h.stim.x - S.player.x, h.stim.z - S.player.z) > 5, 'nobody is given the player\'s position');
+});
+
+test('box modes: a sight box blocks rays but not bodies, a body box blocks bodies but not rays, a plain box both', () => {
+  const wall = (mode) => ({ x0: -3, x1: 3, z0: 4.8, z1: 5.2, y0: 0, y1: 3, tag: 'concrete', ...(mode ? { mode } : {}) }); // thin: 0.4 m thick, in the middle of the cell row z 4..5 and 5..6
+  const probe = (mode) => {
+    const L = buildLevel(open([], [wall(mode)]));
+    return { los: hasLOS(L, 0, 1.6, 0, 0, 1.6, 10), cellBlocked: !Number.isFinite(heightAt(L, 0, 5.5)) || heightAt(L, 0, 5.5) > 0.5 || heightAt(L, 0, 4.5) > 0.5, boxes: L.boxes.length };
+  };
+  assert.deepEqual(probe('sight'), { los: false, cellBlocked: false, boxes: 1 }, 'sight: rays stop, a body walks through');
+  assert.deepEqual(probe('body'), { los: true, cellBlocked: true, boxes: 0 }, 'body: rays pass, a body cannot');
+  assert.deepEqual(probe(null), { los: false, cellBlocked: true, boxes: 1 }, 'plain: both');
+  assert.throws(() => buildLevel(open([], [{ x0: 0, x1: 1, z0: 0, z1: 1, y0: 1, y1: 2, tag: 'wood' }])), /floats/, 'a plain box still may not float');
+  assert.doesNotThrow(() => buildLevel(open([], [{ x0: 0, x1: 1, z0: 0, z1: 0.1, y0: 1, y1: 2, tag: 'wood', mode: 'sight' }])), 'a sight box may hang in the air (a window frame)');
+});
