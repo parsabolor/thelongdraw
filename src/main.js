@@ -3,7 +3,7 @@
 // Third person to walk; first person with a slider sight to aim; binoculars to observe and tag.
 import * as THREE from 'three';
 import { pass } from 'three/tsl';
-import { LEVEL, terrainGrid } from './level.js';
+import { LEVEL, TOWER, TOWERS, terrainGrid } from './level.js';
 import { CUTS } from './shell-data.js';
 import { WORLD } from './world-data.js';
 import * as sim from './sim.js';
@@ -255,10 +255,10 @@ propsReady.then(() => {
     bike.position.set(bx, (hF + hR) / 2, bz);
     scene.add(bike);
   }
-  if (props.hut && skinBoxes.hut) {
-    const { mesh, b } = skinBoxes.hut[0], hut = modelMod.cloneProp(props.hut);
-    hut.position.set((b.x0 + b.x1) / 2, b.y0, (b.z0 + b.z1) / 2);
-    mesh.visible = false; scene.add(hut);
+  if (props.tower) for (const t of TOWERS) { // a lookout tower under each scout, on the levelled ground (level.js TOWERS); the scout stands on its deck
+    const tower = modelMod.cloneProp(props.tower);
+    tower.position.set(t.x, t.base, t.z); tower.rotation.y = t.yaw;
+    scene.add(tower);
   }
 });
 // The outpost: the cleaned scan (assets/world/outpost.glb, built by tools/prep-world.mjs) in the world frame; the grey collision boxes it stands in for are hidden.
@@ -271,6 +271,8 @@ if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost(CUTS)).then((fort)
 const zm = new Map();
 const kills = new Map(); // zombie id -> { dir, part } of the killing blow, for the ragdoll
 const simGround = (x, z) => sim.heightAt(S.level, x, z); // the sim's walkable height (terrain, box tops; sealed ground and the map edge are Infinity)
+// A scout that dies on its tower lands on the deck, not on the ground below it.
+const deckGround = (x, z) => { for (const t of TOWERS) if (Math.abs(x - t.x) < TOWER.half && Math.abs(z - t.z) < TOWER.half) return t.base + TOWER.deck; return simGround(x, z); };
 function addZombie(z) {
   const fig = makeZombie(z);
   const ind = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: 0x9aa5ad, depthTest: false, transparent: true }));
@@ -590,7 +592,7 @@ function syncMeshes(dt) {
     m.fig.root.position.set(z.x, z.y, z.z);
     m.fig.root.rotation.y = z.yaw;
     m.fig.update(dt, { speed: m.speed, state: z.state, attacking: S.t < m.attackUntil, crouch: false, drawing: false, sees: z.sees,
-      ground: simGround, anchor: z, kill: kills.get(z.id) }); // a dead zombie becomes a ragdoll on the sim's ground (src/ragdoll.js)
+      ground: z.role === 'scout' ? deckGround : simGround, anchor: z, kill: kills.get(z.id) }); // a dead zombie becomes a ragdoll on the sim's ground (src/ragdoll.js)
     m.ind.visible = z.tagged && z.state !== 'dead';
     if (m.ind.visible) { m.ind.material.color.setHex(STATE_COLOR[z.state] ?? 0x9aa5ad); m.ind.rotation.y = S.t * 2; }
   }

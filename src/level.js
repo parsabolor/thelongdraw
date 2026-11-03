@@ -19,6 +19,21 @@ export function terrainHeight(x, z) {
   const g = (i, j) => grid[j * N + i];
   return (g(a, b) * (1 - u) + g(a + 1, b) * u) * (1 - v) + (g(a, b + 1) * (1 - u) + g(a + 1, b + 1) * u) * v;
 }
+// ---------- the scouts' towers: the ground under each is levelled ----------
+// Each scout stands on the deck of a lookout tower (assets/models/game/hut.fbx: a small wooden tower with a plank deck, drawn `scale` times its size). The model's posts have
+// a fixed length, so on a slope they would hang in the air on one side and a body would walk into the deck on the other: the 1 m height grid is blended toward the tower's
+// base height, level within `flat` metres and back to the hillside over `blend` more (terrainHeight, terrainSurface and the drawn ground all read this one grid).
+// deck: the planks' height above the feet; half: half the deck's width. Both measured on the model as three.js loads it (rays down onto the placed tower: planks at
+// 3.02 to 3.33 m, 3.25 m under the scout, about 2.6 m across, roof top at 5 to 6 m). The proportions the model has in Blender are not the ones its FBX loads with.
+export const TOWER = { scale: 3.6, deck: 3.25, half: 1.5, flat: 3.2, blend: 6 };
+export const TOWERS = [[26, 44], [30, -4], [17, -50]].map(([x, z]) => ({ x, z, base: terrainHeight(x, z), yaw: Math.atan2(-x, -z) })); // yaw: looking at the fort
+for (const t of TOWERS) {
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const d = Math.hypot(LO + i * WORLD.step - t.x, LO + j * WORLD.step - t.z); if (d > TOWER.flat + TOWER.blend) continue;
+    const u = Math.min(1, Math.max(0, (d - TOWER.flat) / TOWER.blend)), w = 1 - u * u * (3 - 2 * u);
+    grid[j * N + i] += (t.base - grid[j * N + i]) * w;
+  }
+}
 // The renderer's ground: a smooth (Catmull-Rom) surface through the SAME 1 m samples, so it meets terrainHeight at every grid point and is only a few
 // centimetres off between them (p99 about 11 cm), without the facets of the bilinear one. The sim keeps terrainHeight: ground contact, line of sight and
 // path finding all stay as they were; the renderer subdivides its mesh finely and takes the heights from here.
@@ -74,17 +89,19 @@ const boxes = [];
 for (const [x0, x1, z0, z1, y0, y1] of SIGHT_BOXES) boxes.push({ x0, x1, z0, z1, y0, y1, tag: 'rock', mode: 'sight' });
 for (const [x0, x1, z0, z1, y1] of BODY_BOXES) boxes.push({ x0, x1, z0, z1, y0: 0, y1, tag: 'rock', mode: 'body', skin: 'outpost' });
 boxes.push({ x0: 4.5, x1: 5.5, z0: 8, z1: 9, y0: 0, y1: 3, tag: 'metal' }); // the bell post on the pad in front of the door
+// The scouts' decks, for rays only (a body walks under a lookout tower between its posts): the scout stands on it and cannot see through it, and an arrow from right
+// underneath cannot reach it. Rays from far away pass above the deck's edge to the scout standing in the middle.
+for (const t of TOWERS) boxes.push({ x0: t.x - TOWER.half, x1: t.x + TOWER.half, z0: t.z - TOWER.half, z1: t.z + TOWER.half, y0: t.base + TOWER.deck - 0.15, y1: t.base + TOWER.deck, tag: 'wood', mode: 'sight' });
 
 // ---------- anchors: where things start (tuned against the reachable ground, see test/sim.test.mjs) ----------
 // The player starts in the low south-west valley (about 11 m below the pad) and climbs north-east to the fort. Three scouts hold vantage points
-// over the basin: the south-east plateau (25 m up), the east rim over the pad and the north ridge.
+// over the basin: the south-east plateau (25 m up), the east rim over the pad and the north ridge. Each stands on the deck of its tower (TOWERS above).
 const face = (x, z) => Math.atan2(-x, -z); // yaw that looks at the fort from (x, z)
 const START = { x: -43, z: 31, yaw: face(-43, 31) };
 const BIKE = { x: -40, z: 33 };
 const SPAWNS = [
-  { role: 'scout', x: 26, z: 44, yaw: face(26, 44) },     // south-east plateau: sees the whole south-west approach and the pad
-  { role: 'scout', x: 30, z: -4, yaw: face(30, -4) },     // east rim, straight over the pad
-  { role: 'scout', x: 17, z: -50, yaw: face(17, -50) },   // north ridge
+  ...TOWERS.map((t) => ({ role: 'scout', x: t.x, z: t.z, y: t.base + TOWER.deck, yaw: t.yaw })), // south-east plateau, east rim over the pad, north ridge
+
   { role: 'hunter', x: -25, z: 16, yaw: 0, patrol: [[-25, 16], [-14, 22], [-16, 6], [-31, 17]] },   // the valley, first contact
   { role: 'hunter', x: -10, z: 12, yaw: 0, patrol: [[-10, 12], [-16, 6], [-11, 0], [-14, 13]] },    // west of the fort
   { role: 'hunter', x: 13, z: 12, yaw: 0, patrol: [[13, 12], [8, 14], [4, 12], [12, 6]] },          // at the foot of the escarpment
@@ -126,4 +143,4 @@ export const LEVEL = {
   patrol: [[-10, 12], [10, 12], [-14, 0], [14, -4], [0, -14], [-12, -14], [12, -12], [0, 14], [-16, 6], [8, -8]],
   spawns: SPAWNS,
 };
-LEVEL.props = scatter(11, [[START.x, START.z, 6], [BIKE.x, BIKE.z, 4], ...SPAWNS.flatMap((s) => [[s.x, s.z, 3], ...(s.patrol || []).map(([x, z]) => [x, z, 2.5])]), ...LEVEL.patrol.map(([x, z]) => [x, z, 2.5])]);
+LEVEL.props = scatter(11, [[START.x, START.z, 6], [BIKE.x, BIKE.z, 4], ...TOWERS.map((t) => [t.x, t.z, TOWER.flat + 1]), ...SPAWNS.flatMap((s) => [[s.x, s.z, 3], ...(s.patrol || []).map(([x, z]) => [x, z, 2.5])]), ...LEVEL.patrol.map(([x, z]) => [x, z, 2.5])]);

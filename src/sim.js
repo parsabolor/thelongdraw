@@ -373,7 +373,7 @@ export function createState(def, seed = 1) {
   for (const s of def.spawns) {
     const rp = TUNING.roles[s.role];
     const z = {
-      id: S.nextId++, kind: s.role, role: s.role, x: s.x, z: s.z, y: heightAt(level, s.x, s.z), yaw: s.yaw || 0,
+      id: S.nextId++, kind: s.role, role: s.role, x: s.x, z: s.z, y: s.y ?? heightAt(level, s.x, s.z), perch: s.y, yaw: s.yaw || 0, // `y` (a scout's lookout deck) stands it above the ground, and it stays there
       state: rp.wake ? 'dormant' : 'idle', meter: 0, sens: 1, hp: TUNING.zombie.hp, tagged: false, sees: false,
       post: { x: s.x, z: s.z, yaw: s.yaw || 0 }, patrol: s.patrol || [], pi: 0, wait: 0, path: null, pi2: 0, goal: null, repath: 0,
       point: null, arrived: false, searchC: null, leg: 0, lkp: null, stim: null, seenT: -99, lastStim: -99, heardT: -99, timer: 0, atk: 0, screamed: false, report: 0,
@@ -511,7 +511,7 @@ function steer(S, z, wx, wz, speed, dt) {
     if (cd > 0.05) moveBy(S.level, z, ((cx - z.x) / cd) * speed * dt, ((cz - z.z) / cd) * speed * dt, R, step);
     if (z.jam > 0.9) z.jam = 0;
   }
-  z.y = heightAt(S.level, z.x, z.z);
+  z.y = z.perch ?? heightAt(S.level, z.x, z.z);
   z.yaw = turn(z.yaw, Math.atan2(dx, dz), 10 * dt);
 }
 function goTo(S, z, tx, tz, speed, dt) {
@@ -645,7 +645,7 @@ function separate(S) {
   for (let i = 0; i < Z.length; i++) {
     if (Z[i].state === 'dead') continue;
     for (let j = i + 1; j < Z.length; j++) {
-      if (Z[j].state === 'dead') continue;
+      if (Z[j].state === 'dead' || Z[i].role === 'scout' || Z[j].role === 'scout') continue; // a scout is a fixed post (often high above whoever stands under it)
       const dx = Z[j].x - Z[i].x, dz = Z[j].z - Z[i].z, d = hyp(dx, dz);
       if (d > 0 && d < 0.55) {
         const k = (0.55 - d) / 2 / d;

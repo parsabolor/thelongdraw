@@ -1,7 +1,7 @@
 // Headless checks for the pure logic in src/sim.js. Run: npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVEL } from '../src/level.js';
+import { LEVEL, TOWER } from '../src/level.js';
 import { TUNING, createState, buildLevel, step, emitNoise, fireArrow, retrieve, knife, knifeTarget, windAt, findPath, heightAt, openAt, hasLOS, dropAngle, PIN_RANGES, seesZombie, tagById } from '../src/sim.js';
 
 const idle = { mx: 0, mz: 0, aim: null };
@@ -31,9 +31,10 @@ test('the world is valid: no floating boxes; start, bike, every post and patrol 
   }
   assert.deepEqual(bad, []);
   for (const s of LEVEL.spawns.filter((q) => q.role === 'scout')) {
-    const y = heightAt(L, s.x, s.z);
-    assert.ok(y > 4, `a scout stands high (${y.toFixed(1)} m above the pad)`);
-    assert.ok([[0, 10], [0, -8], [8, 0], [-8, 0]].some(([x, z]) => hasLOS(L, s.x, y + 1.6, s.z, x, 1.6, z)), `the scout at ${s.x}, ${s.z} sees the pad`);
+    const ground = heightAt(L, s.x, s.z), me = S.zombies.find((q) => q.role === 'scout' && q.x === s.x && q.z === s.z);
+    assert.ok(ground > 4, `a scout stands high (${ground.toFixed(1)} m above the pad)`);
+    assert.ok(Math.abs(me.y - (ground + TOWER.deck)) < 1e-6, 'on the deck of its tower');
+    assert.ok([[0, 10], [0, -8], [8, 0], [-8, 0]].some(([x, z]) => hasLOS(L, s.x, me.y + 1.6, s.z, x, 1.6, z)), `the scout at ${s.x}, ${s.z} sees the pad`);
   }
   for (const p of LEVEL.props) for (const [name, q] of [['start', LEVEL.start], ...spots]) assert.ok(Math.hypot(p.x - q.x, p.z - q.z) > p.r + 1, `a ${p.kind} blocks ${name}`);
 });

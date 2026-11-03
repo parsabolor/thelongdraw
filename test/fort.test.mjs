@@ -3,7 +3,7 @@
 // Measured on the scan: the front wall is at z about 5.7 with a doorway at x 0.9 to 1.9 and windows at x about -5.0 to -4.4 and -1.6 to -1.2; there is no back wall.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVEL } from '../src/level.js';
+import { LEVEL, TOWER, TOWERS, terrainHeight } from '../src/level.js';
 import { createState, step, findPath, hasLOS, heightAt, seesZombie, tagById } from '../src/sim.js';
 
 const fresh = () => createState(LEVEL, 1);
@@ -57,6 +57,35 @@ test('the binoculars see a zombie inside through a window or the doorway, not th
   Object.assign(z, { x: 1.4, z: 3 });
   assert.ok(seesZombie(S, eye(1.4), z), 'through the doorway');
   assert.ok(tagById(S, z.id), 'tagged');
+});
+
+test('the scouts stand on the decks of their towers, on level ground, and stay there', () => {
+  for (const t of TOWERS) {
+    for (let a = 0; a < 8; a++) for (const r of [0, 1.5, 3]) { // level within TOWER.flat metres
+      assert.ok(Math.abs(terrainHeight(t.x + Math.cos(a) * r, t.z + Math.sin(a) * r) - t.base) < 0.02, `the ground under the tower at ${t.x}, ${t.z} is level (${r} m out)`);
+    }
+  }
+  const S = fresh(), scouts = S.zombies.filter((z) => z.role === 'scout');
+  assert.equal(scouts.length, TOWERS.length);
+  TOWERS.forEach((t, i) => assert.ok(Math.abs(scouts[i].y - (t.base + TOWER.deck)) < 1e-9, `scout ${i} stands on its deck`));
+  // a hunter right under a scout, and a player in sight, for a minute: the scout is not pushed off its deck and does not drop to the ground
+  const t0 = TOWERS[0], hunter = S.zombies.find((z) => z.role === 'hunter');
+  Object.assign(hunter, { x: t0.x + 0.1, z: t0.z, y: heightAt(S.level, t0.x, t0.z) });
+  S.player.hp = 1e9;
+  const before = scouts.map((z) => [z.x, z.y, z.z]);
+  for (let i = 0; i < 3600; i++) step(S, { mx: 0, mz: 0, aim: null });
+  scouts.forEach((z, i) => assert.deepEqual([z.x, z.y, z.z], before[i], `scout ${i} has not moved`));
+});
+
+test('a scout on its deck can be seen and hit from the ground at a reasonable angle, and not from right underneath', () => {
+  const S = fresh(), t = TOWERS[1], scout = S.zombies.filter((z) => z.role === 'scout')[1]; // the east rim, over the pad
+  let seen = 0;
+  for (let a = 0; a < 16; a++) { // from 14 m away, all round: wherever the hillside is not too steep to look up the deck's edge
+    const x = t.x + Math.cos(a * Math.PI / 8) * 14, z = t.z + Math.sin(a * Math.PI / 8) * 14, y = heightAt(S.level, x, z);
+    if (Number.isFinite(y) && seesZombie(S, [x, y + 1.6, z], scout)) seen++;
+  }
+  assert.ok(seen >= 4, `seen from ${seen} of 16 directions`);
+  assert.ok(!seesZombie(S, [t.x + 0.5, heightAt(S.level, t.x, t.z) + 1.6, t.z], scout), 'not from under the deck');
 });
 
 test('nothing starts inside a wall', () => {

@@ -16,6 +16,7 @@ import { createSurvivorFigure } from './survivor.js';
 import { createRagdoll, findAnchors } from './ragdoll.js';
 import { gaitRate } from './motion.js';
 import { createArms as makeArms } from './fparms.js';
+import { TOWER } from './level.js';
 
 // The one tuning surface. yaw: radians to turn the model so it faces +Z. height: metres.
 // clips: for each state, a clip name or index to use instead of the name-pattern guess (null = guess).
@@ -266,13 +267,17 @@ const PROPS = {
   knife: { url: 'game/knife.fbx', tex: { '*': T('knife_albedo.jpg', 'knife_normal.jpg', 0.4, 0.3, 0.3) }, long: 0.5, axis: 'z', pivot: 'min' },
   arrow: { url: 'game/arrow.obj', tex: { '*': T('arrow_albedo.jpg', 'arrow_normal.jpg', 0.6, 0.1, 0.7) }, long: 0.8, axis: 'z', pivot: 'max', girth: 3 }, // a real 5 mm shaft is a hairline in play: 3x, and the fletching glows
   bike: { url: 'game/bike.glb', long: 2.1, axis: 'x', pivot: 'centre', floor: true }, // textures are embedded
-  hut: { url: 'game/hut.fbx', tex: { '*': T('hut_albedo.jpg', 'hut_normal.jpg') }, long: 2.4, axis: 'x', pivot: 'centre', floor: true },
+  // The scouts' lookout tower (level.js TOWER): the model is a wooden tower with a plank deck, 2.417 m long including the fence and ramp beside it (the tower frame is
+  // only 0.94 m square), drawn TOWER.scale times its size. `frame`: where the tower frame's middle lies in the bounding box, as fractions along x and z, so the origin
+  // is under the middle of the deck (measured on the mesh: the frame's centre is 0.741 of the way along x and 0.40 along z).
+  tower: { url: 'game/hut.fbx', tex: { '*': T('hut_albedo.jpg', 'hut_normal.jpg') }, long: 2.417 * TOWER.scale, axis: 'x', pivot: 'centre', floor: true, frame: [0.741, 0.40] },
 };
 
-function normalise(scene, { long, axis, pivot, floor, girth = 1 }) {
+function normalise(scene, { long, axis, pivot, floor, girth = 1, frame = null }) {
   scene.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(scene), size = box.getSize(new THREE.Vector3()), off = box.getCenter(new THREE.Vector3());
   if (pivot === 'min') off[axis] = box.min[axis]; else if (pivot === 'max') off[axis] = box.max[axis];
+  if (frame) { off.x = box.min.x + size.x * frame[0]; off.z = box.min.z + size.z * frame[1]; }
   if (floor) off.y = box.min.y;
   const inner = new THREE.Group(), root = new THREE.Group(), s = long / size[axis];
   scene.position.sub(off); inner.add(scene); root.add(inner);
@@ -280,7 +285,7 @@ function normalise(scene, { long, axis, pivot, floor, girth = 1 }) {
   return { root, size: size.multiplyScalar(s) };
 }
 
-// Loaded after the first frame (the figures are loaded before it): { knife, arrow, bike, hut } with whatever was found.
+// Loaded after the first frame (the figures are loaded before it): { knife, arrow, bike, tower } with whatever was found.
 export async function loadProps() {
   const out = {};
   await Promise.all(Object.entries(PROPS).map(async ([name, spec]) => {

@@ -41,7 +41,7 @@ albedo and normal maps; this folder is in the repository). It also strips the fu
 | `game/knife.fbx` | kukri, 4k triangles | the knife: on the right hip, swung out when F is pressed |
 | `game/arrow.obj` | arrow, 5k triangles, drawn 3x thicker and with a glowing fletching so it shows at night | every arrow in flight or stuck in a body or the ground |
 | `game/bike.glb` | cafe racer, 95k triangles | the bike at the start |
-| `game/hut.fbx` | lookout hut, 810 triangles | stands on a solid box at the edge of the pad (`skin: 'hut'` in `src/level.js`) |
+| `game/hut.fbx` | wooden lookout tower (posts, plank deck, roof, ladder; 810 triangles) | the scouts' towers: one under each scout, drawn 3.6 times its size (`TOWER` in `src/level.js`), on ground flattened under it. The deck (3.25 m up) was measured on the model as three.js loads it, not in Blender, where its proportions differ |
 | `game/scout.glb` | the owner's "dead man" (Blender export `zombie.glb`, 109k triangles, PBR + emission maps, one 11.7 s sway clip), prepared by `node tools/prep-scout.mjs` | the 3 scouts, on the vantage points (about 2 m tall, tinted slightly blue; it ragdolls like the others) |
 | `game/bow.fbx`, `game/sight.fbx` | compound bow (22 parts, 12k triangles) and the Avalon slider sight | the first-person bow and sight (`src/bow.js`); the pins stay procedural at the ballistics positions |
 
@@ -62,7 +62,10 @@ most about 25 cm off between them. The scan textures are soft (the terrain's col
 `assets/textures` on top in the material (gravel on the ground at two scales, concrete and rock on the fort), sampled in world space and normalised so it adds grain without shifting colour.
 Trees are generated in code by `src/trees.js` (three seeded conifer variants, instanced), not from a model file.
 
-The fort's collision is authored by hand in `src/level.js` from the 1 m column maps the tool prints (about 20 boxes, with a 2 m doorway). To rebuild:
+The fort's collision is generated from the scan itself by `node tools/prep-shell.mjs`, which writes `src/shell-data.js` (the scan is a single-sided shell with no back wall, a doorway
+about 1 m wide at x 0.9 to 1.9 and two windows): rays through the mesh give about 1460 sight boxes (what arrows and eyes cannot pass) and 19 body boxes (where a body cannot walk,
+with the door and porch cells forced free). `CUTS` in the same file lists the junk triangles removed from both the shell and the drawn model. `node tools/check-shell.mjs 20000` compares
+the sim's line of sight with a ray through the mesh (about 95% agreement); `tools/meshray.mjs` is the shared ray caster. Rebuild the world with
 `node tools/prep-world.mjs terrain` then `node tools/prep-world.mjs outpost`. Both need `npm install` (dev dependencies `meshoptimizer` and
 `@gltf-transform/core`) and macOS `sips`.
 

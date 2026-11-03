@@ -49,17 +49,17 @@ The simulation, level, tools and animation maths run in Node with no browser (`t
 | | |
 |---|---|
 | `src/sim.js` | the rules, as a pure deterministic 60 Hz simulation: movement, noise and hearing, sight, the zombies' states, arrows, wind, the knife |
-| `src/level.js`, `src/world-data.js` | the outpost as data (fort collision, spawns, patrol points) over a baked heightmap (`world-data.js` is generated) |
+| `src/level.js`, `src/world-data.js`, `src/shell-data.js` | the outpost as data (fort collision, spawns, patrol points, the scouts' towers) over a baked heightmap (`world-data.js` and `shell-data.js`, the fort's walls cut from the scan, are generated) |
 | `src/main.js` | rendering, input, the HUD and the minimap; the game rules stay in `sim.js` |
 | `src/survivor.js`, `held.js`, `fparms.js`, `ik.js`, `motion.js` | the player's body: a rig skinned onto a static model, procedural walk, crouch and stab, what it carries, first-person arms with two-bone IK |
 | `src/fx.js` | the night's atmosphere as shader builders: mist, light motes, tree sway, frost glints (loaded only when on; `main.js` composes them) |
 | `src/ragdoll.js`, `trees.js`, `detail.js`, `bow.js`, `models.js`, `characters.js`, `audio.js`, `materials.js` | ragdolls, instanced conifers, material detail, the first-person bow, model loading, procedural people (the fallback), sound, textures |
-| `tools/` | `serve.mjs` (the dev server) and the scripts that turn downloaded art into game files (`prep-*.mjs`, `fetch-*.mjs`) |
+| `tools/` | `serve.mjs` (the dev server), the scripts that turn downloaded art into game files (`prep-*.mjs`, `fetch-*.mjs`), and `prep-shell.mjs` / `check-shell.mjs` / `meshray.mjs`, which cut the fort's walls from the scan and check them against it |
 | `dev/` | viewer pages for single parts (`dev/survivor.html`, `dev/trees.html`, `dev/bow.html`, ...) |
 
 ## Art and licences
 
-- **What is in the repository:** the characters, weapons, bike, lookout hut, and the terrain and outpost scans, trimmed for the browser (`assets/models/game/`, `assets/world/`, 45 MB), and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`). The trees are generated in code.
+- **What is in the repository:** the characters, weapons, bike, lookout tower, and the terrain and outpost scans, trimmed for the browser (`assets/models/game/`, `assets/world/`, 45 MB), and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`). The trees are generated in code.
 - **Licences:** the owner who downloaded that art says it is all under free licences that need no credit. The download packs carry no licence files, so this repository has no per-model licence record: if you reuse a model outside this project, check where it came from.
 - **What is not:** the raw downloads (about 800 MB, `assets/models/incoming/`), which are too large for git. `tools/prep-assets.mjs`, `prep-scout.mjs` and `prep-world.mjs` rebuild the trimmed files from them if you have them. `src/world-data.js` is baked from the terrain scan by `node tools/prep-world.mjs terrain`.
 - **Using your own art:** see `assets/models/README.md`. Every model is optional: delete one and the game falls back to a built-in stand-in (procedural people, a textured box for the fort, a neutral ground).
