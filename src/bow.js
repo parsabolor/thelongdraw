@@ -37,7 +37,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // 9.31 cm * sk = 5.8 cm from its housing (sight.fbx: x -4.31 to 5.45, housing at 5.0) and the housing is on the view axis, so the riser's face is at -5.8 cm: it spans x -0.09 to -0.06.
 const MD = { k: 0.0062, xs: -0.06, ya: -0.068, nock0: -0.395, sk: 0.0062, sd: 0.683, hs: [5.0, -0.94, -3.91] };
 const ARROW_LEN = 0.7; // the supplied arrow (0.8 m, tip at its origin) is shown this long, nocked
-const HIDE = ['String_Low', 'StringHold_Low', 'Tension_Low']; // replaced by the procedural string and nock loop; the model's cables are not drawn (see applyDraw)
+const HIDE = ['String_Low', 'StringHold_Low', 'Tension_Low']; // replaced by the procedural string and nock loop; the model's cables are not drawn (see `fixed` below)
 const C45 = Math.SQRT1_2;
 // The bow FBX is authored at 45 degrees in the Y-Z plane (up = (y-z)/sqrt2, target = (y+z)/sqrt2, string toward the archer). This proper
 // rotation maps it to camera space: up +Y, target -Z, string +Z (the thickness axis x flips: the grip ends up left of the string plane).
