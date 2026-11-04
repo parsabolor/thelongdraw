@@ -287,7 +287,7 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
       glowTex = track(new THREE.CanvasTexture(cv));
       glowTex.colorSpace = THREE.SRGBColorSpace;
     }
-    const tipGeo = track(new THREE.SphereGeometry(0.0013, 12, 8)), glowGeo = track(new THREE.PlaneGeometry(0.0075, 0.0075));
+    const tipGeo = track(new THREE.SphereGeometry(0.0009, 12, 8)), glowGeo = track(new THREE.PlaneGeometry(0.0042, 0.0042)); // the fibre's light: a pinpoint, so it does not cover what it aims at
     pins.forEach((p) => {
       const y = -Math.tan(p.angle) * D;
       const prod = MB ? null : rod(sight, M.pinBody, 0.00045, V(PX, y, 0), V(0.0, y, 0), 5); // the model's own housing carries its fibre: no rod
