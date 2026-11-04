@@ -43,8 +43,7 @@ const C45 = Math.SQRT1_2;
 // rotation maps it to camera space: up +Y, target -Z, string +Z (the thickness axis x flips: the grip ends up left of the string plane).
 const BOW_M = new THREE.Matrix4().set(-1, 0, 0, 0, 0, C45, -C45, 0, 0, -C45, -C45, 0, 0, 0, 0, 1);
 // That layout is the right one: the survivor holds the bow in his LEFT hand and draws with the right, so the grip is on the left and the arrow, on the body side of the riser, on its
-// right (seen from behind the arrow). It was mirrored for a while on the wrong reading of "the arrow on the left"; the string then crossed the bow arm. The first-person and the
-// carried bow both come from bowWrap, so they cannot disagree.
+// right (seen from behind the arrow). The first-person and the carried bow both come from bowWrap, so they cannot disagree.
 function bowWrap(src) {
   const wrap = new THREE.Group();
   wrap.add(src.clone(true)); // clone shares geometry and materials: the assets can feed several viewmodels
@@ -108,7 +107,7 @@ function prepBow(src) {
 // The supplied bow as the survivor CARRIES it (third person, string not drawn): a Group in metres with the grip's centre at the origin, the limbs along +y,
 // the target toward -z and the string toward the archer (+z), the model's own string and cables shown. Rotate it into the hand's frame where it is used.
 export function createHeldBow(assets) {
-  const wrap = bowWrap(assets.bow); // the same mirrored bow as the first-person one
+  const wrap = bowWrap(assets.bow); // the same bow as the first-person one
   const grip = wrap.getObjectByName('Grip_Low');
   if (!grip) throw new Error('bow model has no mesh Grip_Low');
   wrap.position.sub(new THREE.Box3().setFromObject(grip, true).getCenter(V(0, 0, 0)));
@@ -451,7 +450,7 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   // The bow hand, as archery coaching has it: the grip sits in the web between thumb and index finger (the thumb pad), the wrist is straight so the hand continues the
   // arm toward the target, the fingers are loose and point forward alongside the grip, the palm turned inward (knuckles at about 45 degrees), the thumb forward.
   // The hand is on the riser's outer (left) side and the forearm comes in from the left, so the bow arm stays on the far side of the string from the body, and the string passes on
-  // the arm's inner side (the side an armguard covers). Crossing to the grip from the right of the string was the mistake of the mirrored layout.
+  // the arm's inner side (the side an armguard covers).
   const gripMark = handMark(root, [XR - 0.038, -0.118 + HY, ZR + 0.06], [-0.25, 0.15, -0.95], [0.4, 0.2, -0.85]); // left of the sight line, so the pin stays clear
   const nockMark = handMark(rhand, [0.07, -0.075, 0.16], [0, 0.25, -0.97], [-1, 0, 0]);                     // the draw hand: low and right of the string, so it sits below the frame at brace and passes behind the eye plane as the bow is drawn (the release aid is procedural)
   let arms = null;
