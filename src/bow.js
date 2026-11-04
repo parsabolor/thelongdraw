@@ -37,7 +37,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // 9.31 cm * sk = 5.8 cm from its housing (sight.fbx: x -4.31 to 5.45, housing at 5.0) and the housing is on the view axis, so the riser's face is at -5.8 cm: it spans x -0.09 to -0.06.
 const MD = { k: 0.0062, xs: -0.06, ya: -0.068, nock0: -0.395, sk: 0.0062, sd: 0.683, hs: [5.0, -0.94, -3.91] };
 const ARROW_LEN = 0.7; // the supplied arrow (0.8 m, tip at its origin) is shown this long, nocked
-const HIDE = ['String_Low', 'StringHold_Low', 'Tension_Low']; // replaced by the procedural string, nock loop and cables
+const HIDE = ['String_Low', 'StringHold_Low', 'Tension_Low']; // replaced by the procedural string and nock loop; the model's cables are not drawn (see applyDraw)
 const C45 = Math.SQRT1_2;
 // The bow FBX is authored at 45 degrees in the Y-Z plane (up = (y-z)/sqrt2, target = (y+z)/sqrt2, string toward the archer). This proper
 // rotation maps it to camera space: up +Y, target -Z, string +Z (the thickness axis x flips: the grip ends up left of the string plane).
@@ -86,7 +86,7 @@ function prepBow(src) {
   };
   const ctr = (b) => b.getCenter(V(0, 0, 0));
   const up = box('UpperWheel_Low'), lo = box('LowerWheel_Low'), grip = box('Grip_Low'), body = box('Body_Low');
-  const cT = ctr(up), cB = ctr(lo), xStr = ctr(box('String_Low')).x, slide = ctr(box('StringHold_Low')), g = ctr(grip);
+  const cT = ctr(up), cB = ctr(lo), xStr = ctr(box('String_Low')).x, g = ctr(grip);
   HIDE.forEach((n) => { box(n); wrap.getObjectByName(n).visible = false; });
   // the string leaves each cam at its rear rim; the nock sits on that line at the arrow height
   const rimT = V(xStr, cT.y, up.max.z), rimB = V(xStr, cB.y, lo.max.z);
@@ -98,8 +98,7 @@ function prepBow(src) {
   wrap.position.copy(off);
   const P = (v) => v.add(off);
   return {
-    wrap, camT: P(cT), camB: P(cB), rimT: P(rimT), rimB: P(rimB), slide: P(slide),
-    camRT: (up.max.z - up.min.z) / 2, camRB: (lo.max.z - lo.min.z) / 2,
+    wrap, rimT: P(rimT), rimB: P(rimB),
     grip: P(g), gripHalf: V((grip.max.x - grip.min.x) / 2, (grip.max.y - grip.min.y) / 2, (grip.max.z - grip.min.z) / 2),
     restZ: body.max.z + off.z - 0.01,
   };
@@ -373,7 +372,8 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
 
   const strTop = new THREE.Mesh(cylGeo(0.00085, 5), M.string), strBot = new THREE.Mesh(cylGeo(0.00085, 5), M.string);
   const cabA = new THREE.Mesh(cylGeo(0.0011, 5), M.cable), cabB = new THREE.Mesh(cylGeo(0.0011, 5), M.cable);
-  root.add(strTop, strBot, cabA, cabB);
+  root.add(strTop, strBot);
+  if (!MB) root.add(cabA, cabB); // the model path draws no cables (see applyDraw)
   const dLoop = add(root, track(new THREE.TorusGeometry(0.0055, 0.0011, 6, 14)), M.string);
 
   // ---------- arrow (origin at the nock groove, shaft toward -Z) ----------
@@ -459,11 +459,9 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   // ---------- state + pose ----------
   let raise = 1, draw = 0, nocked = true;
   const nockZ0 = MB ? MD.nock0 : ZR + BRACE;
-  // model path: the string leaves each cam at its rear rim, the cables run from the cams to the slide on the guard rod (static: the cams do not turn)
-  const fixed = MB && {
-    aTop: MB.rimT, aBot: MB.rimB, slide: MB.slide,
-    cabT: V(MB.camT.x, MB.camT.y - 0.5 * MB.camRT, MB.camT.z), cabB: V(MB.camB.x, MB.camB.y + 0.5 * MB.camRB, MB.camB.z),
-  };
+  // model path: the string leaves each cam at its rear rim. No cables are drawn: the cams do not turn and the slide sits on the string's plane, so the cables made one straight line
+  // where the string rests, and once the string was drawn back that read as a second string.
+  const fixed = MB && { aTop: MB.rimT, aBot: MB.rimB };
 
   function applyDraw() {
     const f = draw;
@@ -485,7 +483,6 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
     const nock = V(XS, YA, nockZ0 + f * DRAW);
     if (fixed) {
       place(strTop, fixed.aTop, nock); place(strBot, nock, fixed.aBot);
-      place(cabA, fixed.cabT, fixed.slide); place(cabB, fixed.slide, fixed.cabB);
     } else {
       const top = ENDS[0], bot = ENDS[1];
       const camTopZ = top.camG.position.z, camBotZ = bot.camG.position.z;
