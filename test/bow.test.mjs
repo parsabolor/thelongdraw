@@ -69,6 +69,7 @@ test('model bow: the hidden string meshes stay out, the nock is left of and belo
   assert.ok(Math.abs(nock.z - -0.395) < 1e-6 && nock.y < 0 && nock.x < 0, `nock at ${nock.toArray()}`);
   const grip = boxOf(vm.group.getObjectByName('Grip_Low'));
   assert.ok(nock.x > grip.max.x - 1e-3, `the arrow (x ${nock.x}) is on the riser's right face (grip x ${grip.min.x} to ${grip.max.x}): the bow arm is on the other side of the string`);
+  assert.ok(nock.y > grip.max.y && nock.y - grip.max.y < 0.03, `the arrow (y ${nock.y}) sits on top of the handle (grip top ${grip.max.y})`);
 });
 
 test('model bow: the sight is mounted on the arrow\'s side of the riser, its right face: its arm runs from the pin housing on the view axis to that face', () => {

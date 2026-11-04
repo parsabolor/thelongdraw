@@ -90,8 +90,9 @@ function prepBow(src) {
   HIDE.forEach((n) => { box(n); wrap.getObjectByName(n).visible = false; });
   // the string leaves each cam at its rear rim; the nock sits on that line at the arrow height
   const rimT = V(xStr, cT.y, up.max.z), rimB = V(xStr, cB.y, lo.max.z);
-  // ponytail: the model has no arrow rest; the arrow height (just below the grip midpoint) was picked from the riser window and the rest is procedural
-  const ya = g.y - 0.15 * (grip.max.y - grip.min.y);
+  // The model has no arrow rest, so the rest is procedural and the arrow sits on top of the handle, as on a real bow: 9 mm above the grip's top edge, which is where the shaft clears the
+  // riser block's sloped underside (measured on bow.fbx). MD.ya and the pin stay put, so this lowers the bow about 8 cm against the arrow and the sight: the sight is then above the arrow.
+  const ya = grip.max.y + 0.009;
   const nockZ = lerp(rimT.z, rimB.z, (rimT.y - ya) / (rimT.y - rimB.y));
   const off = V(MD.xs - xStr, MD.ya - ya, MD.nock0 - nockZ);
   wrap.position.copy(off);
