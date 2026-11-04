@@ -23,13 +23,13 @@
   #status b { font-weight:600; }
   #toast { left:50%; top:14%; transform:translateX(-50%); text-align:center; opacity:0; transition:opacity .25s; }
   #badge { left:12px; top:12px; color:var(--dim); }
-  #help { left:12px; top:44px; color:var(--dim); white-space:pre; }
+  #help { left:12px; top:44px; color:var(--dim); white-space:pre-wrap; max-width:calc(100vw - 300px); } /* wraps before the minimap (240 px at the right) */
   #mini { position:fixed; right:12px; top:12px; width:240px; height:240px; border-radius:6px; background:var(--bg); }
   #screen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(8,11,14,.72); text-align:center; }
   #screen > div { max-width:560px; padding:24px 28px; background:#161d23; border-radius:8px; }
   #screen h1 { margin:0 0 8px; font-size:20px; }
   #screen p { color:var(--dim); margin:6px 0; }
-  #screen pre { text-align:left; display:inline-block; color:var(--fg); margin:10px 0 0; }
+  #screen pre { text-align:left; display:inline-block; color:var(--fg); margin:10px 0 0; white-space:pre-wrap; } /* the controls lines are longer than the 560 px panel */
   .hidden { display:none !important; }
 </style>
 <script type="importmap">
