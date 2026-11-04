@@ -41,7 +41,7 @@ const C45 = Math.SQRT1_2;
 // The bow FBX is authored at 45 degrees in the Y-Z plane (up = (y-z)/sqrt2, target = (y+z)/sqrt2, string toward the archer). This proper
 // rotation maps it to camera space: up +Y, target -Z, string +Z (the thickness axis x flips: the grip ends up left of the string plane).
 const BOW_M = new THREE.Matrix4().set(-1, 0, 0, 0, 0, C45, -C45, 0, 0, -C45, -C45, 0, 0, 0, 0, 1);
-// ...which is a right-handed bow, with the arrow on the riser's RIGHT. The survivor holds the bow in his LEFT hand, so the arrow (and the sight) belong on the left: bowWrap
+// BOW_M alone gives a right-handed bow, with the arrow on the riser's RIGHT, which is not what the game uses. The survivor holds the bow in his LEFT hand, so the arrow (and the sight) belong on the left: bowWrap
 // mirrors the model about its own thickness axis (a negative x scale: the renderer flips the winding of a mirrored mesh itself). The first-person and the carried bow both
 // come from here, so they cannot disagree. The model's lettering reads backwards: it is a mirror image.
 function bowWrap(src) {
@@ -452,7 +452,8 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   // arm toward the target, the fingers are loose and point forward alongside the grip, the palm turned inward (knuckles at about 45 degrees), the thumb forward.
   // With the arrow on the riser's left (the bow is mirrored) the arrow passes at the grip's height on the hand's own side, so the hand holds the grip low, under the arrow, and the
   // forearm drops out of the picture instead of lying across the arrow and the sight (found on screen: held at the grip's middle, the sleeve hid both).
-  const gripMark = handMark(root, [XR - 0.018, -0.198 + HY, ZR + 0.08], [-0.25, 0.15, -0.95], [0.4, 0.2, -0.85]);
+  // (The procedural fallback bow is not mirrored and has its grip higher, so it keeps its original target.)
+  const gripMark = handMark(root, MB ? [XR - 0.018, -0.198 + HY, ZR + 0.08] : [XR - 0.038, -0.118 + HY, ZR + 0.06], [-0.25, 0.15, -0.95], [0.4, 0.2, -0.85]);
   const nockMark = handMark(rhand, [0.07, -0.075, 0.16], [0, 0.25, -0.97], [-1, 0, 0]);                     // the draw hand: low and right of the string, so it sits below the frame at brace and passes behind the eye plane as the bow is drawn (the release aid is procedural)
   let arms = null;
 
