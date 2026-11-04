@@ -31,13 +31,27 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // sd: the distance of the pin plane from the eye in the model path: the Avalon's housing (the square with the red fibre at the end of its rail) goes
 // there, and its arm then ends at the front of the riser. hs: the housing's centre in the sight model, cm (measured on sight.fbx: the rail ends in a
 // 9 x 11 x 11 mm box at x 4.56..5.45, y -1.5..-0.38, z -4.47..-3.36). The whole sight slides up and down to put that housing on the pin's ray.
-const MD = { k: 0.0062, xs: -0.06, ya: -0.068, nock0: -0.395, sk: 0.0062, sd: 0.683, hs: [5.0, -0.94, -3.91] };
+// xs: the arrow's x (the string plane, the riser's arrow-side face). Not free: the bow and the sight are mirrored (the archer holds the bow in the LEFT hand, so the arrow
+// is on the riser's left and the sight bracket is mounted on that same side), the sight's mount end is 9.31 cm * sk = 5.8 cm from its housing (sight.fbx: x -4.31 to 5.45,
+// housing at 5.0) and the housing is on the view axis, so the riser's face is at +5.8 cm and the riser spans x 0.06 to 0.09.
+const MD = { k: 0.0062, xs: 0.06, ya: -0.068, nock0: -0.395, sk: 0.0062, sd: 0.683, hs: [5.0, -0.94, -3.91] };
 const ARROW_LEN = 0.7; // the supplied arrow (0.8 m, tip at its origin) is shown this long, nocked
 const HIDE = ['String_Low', 'StringHold_Low', 'Tension_Low']; // replaced by the procedural string, nock loop and cables
 const C45 = Math.SQRT1_2;
 // The bow FBX is authored at 45 degrees in the Y-Z plane (up = (y-z)/sqrt2, target = (y+z)/sqrt2, string toward the archer). This proper
 // rotation maps it to camera space: up +Y, target -Z, string +Z (the thickness axis x flips: the grip ends up left of the string plane).
 const BOW_M = new THREE.Matrix4().set(-1, 0, 0, 0, 0, C45, -C45, 0, 0, -C45, -C45, 0, 0, 0, 0, 1);
+// ...which is a right-handed bow, with the arrow on the riser's RIGHT. The survivor holds the bow in his LEFT hand, so the arrow (and the sight) belong on the left: bowWrap
+// mirrors the model about its own thickness axis (a negative x scale: the renderer flips the winding of a mirrored mesh itself). The first-person and the carried bow both
+// come from here, so they cannot disagree. The model's lettering reads backwards: it is a mirror image.
+function bowWrap(src) {
+  const wrap = new THREE.Group();
+  wrap.add(src.clone(true)); // clone shares geometry and materials: the assets can feed several viewmodels
+  wrap.setRotationFromMatrix(BOW_M);
+  wrap.scale.set(-MD.k, MD.k, MD.k);
+  wrap.updateMatrixWorld(true);
+  return wrap;
+}
 
 export async function loadBowAssets(base = new URL('../assets/models/game/', import.meta.url).href) {
   try {
@@ -64,11 +78,7 @@ export async function loadBowAssets(base = new URL('../assets/models/game/', imp
 
 // Normalise the bow model, place it in camera space and derive every anchor from its named meshes. Returns { wrap, ... } (metres, camera space).
 function prepBow(src) {
-  const wrap = new THREE.Group();
-  wrap.add(src.clone(true)); // clone shares geometry and materials: the assets can feed several viewmodels
-  wrap.setRotationFromMatrix(BOW_M);
-  wrap.scale.setScalar(MD.k);
-  wrap.updateMatrixWorld(true);
+  const wrap = bowWrap(src);
   const box = (n) => {
     const m = wrap.getObjectByName(n);
     if (!m) throw new Error('bow model has no mesh ' + n);
@@ -97,11 +107,7 @@ function prepBow(src) {
 // The supplied bow as the survivor CARRIES it (third person, string not drawn): a Group in metres with the grip's centre at the origin, the limbs along +y,
 // the target toward -z and the string toward the archer (+z), the model's own string and cables shown. Rotate it into the hand's frame where it is used.
 export function createHeldBow(assets) {
-  const wrap = new THREE.Group();
-  wrap.add(assets.bow.clone(true)); // shares geometry and materials with the first-person bow
-  wrap.setRotationFromMatrix(BOW_M);
-  wrap.scale.setScalar(MD.k);
-  wrap.updateMatrixWorld(true);
+  const wrap = bowWrap(assets.bow); // the same mirrored bow as the first-person one
   const grip = wrap.getObjectByName('Grip_Low');
   if (!grip) throw new Error('bow model has no mesh Grip_Low');
   wrap.position.sub(new THREE.Box3().setFromObject(grip, true).getCenter(V(0, 0, 0)));
@@ -178,6 +184,7 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   };
 
   // ---------- layout (camera space at full raise) ----------
+  // ponytail: the procedural bow (no models) keeps its old handedness, the arrow on the riser's right (XS 0.046, XR -0.05); mirror its x constants if it is ever shown for real.
   // XR and ZR are the hand frame in the model path (the grip centre x, the grip rear face z - 38 mm), the riser frame in the procedural one.
   const ZR = MB ? MB.grip.z + MB.gripHalf.z - 0.0385 : -(D - 0.075); // riser / arrow rest depth; the sight bracket reaches 75 mm further forward
   const XS = MB ? MD.xs : 0.046; // string plane x == arrow axis x
@@ -248,7 +255,8 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   const pinTips = [], pinSet = [];
   const PX = 0.034; // where the pin rods leave the pin guard (procedural sight only)
   let sightModel = null;
-  if (MB) { sightModel = assets.sight.clone(true); sightModel.scale.setScalar(MD.sk); sight.add(sightModel); } // the Avalon slider sight: its housing is at the pin, the arm runs back to the riser
+  // the Avalon slider sight: its housing is at the pin, the arm runs sideways to the riser. Mirrored (negative x scale) like the bow: it is mounted on the riser's left, the arrow's side.
+  if (MB) { sightModel = assets.sight.clone(true); sightModel.scale.set(-MD.sk, MD.sk, MD.sk); sight.add(sightModel); }
   if (!MB) {
     const arc = 290 * Math.PI / 180;
     const ring = add(sight, track(new THREE.TorusGeometry(0.022, 0.0013, 8, 64, arc)), M.sight);
@@ -301,7 +309,7 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
     const o = pinSet[i]; if (!o) return;
     o.tip.position.y = y; if (o.glow) o.glow.position.y = y;
     if (o.rod) place(o.rod, V(PX, y, 0), V(0, y, 0));
-    if (sightModel && i === 0) sightModel.position.set(-MD.hs[0] * MD.sk, y - MD.hs[1] * MD.sk, -MD.hs[2] * MD.sk);
+    if (sightModel && i === 0) sightModel.position.set(-sightModel.scale.x * MD.hs[0], y - MD.hs[1] * MD.sk, -MD.hs[2] * MD.sk); // x: the housing stays on the pin whichever way the model is mirrored
   }
   pins.forEach((p, i) => setPinY(i, -Math.tan(p.angle) * D));
 
@@ -442,7 +450,9 @@ export function createBowViewmodel({ pins = [], sightDist = 0.62, assets = null 
   };
   // The bow hand, as archery coaching has it: the grip sits in the web between thumb and index finger (the thumb pad), the wrist is straight so the hand continues the
   // arm toward the target, the fingers are loose and point forward alongside the grip, the palm turned inward (knuckles at about 45 degrees), the thumb forward.
-  const gripMark = handMark(root, [XR - 0.038, -0.118 + HY, ZR + 0.06], [-0.25, 0.15, -0.95], [0.4, 0.2, -0.85]); // left of the sight line, so the pin stays clear
+  // With the arrow on the riser's left (the bow is mirrored) the arrow passes at the grip's height on the hand's own side, so the hand holds the grip low, under the arrow, and the
+  // forearm drops out of the picture instead of lying across the arrow and the sight (found on screen: held at the grip's middle, the sleeve hid both).
+  const gripMark = handMark(root, [XR - 0.018, -0.198 + HY, ZR + 0.08], [-0.25, 0.15, -0.95], [0.4, 0.2, -0.85]);
   const nockMark = handMark(rhand, [0.07, -0.075, 0.16], [0, 0.25, -0.97], [-1, 0, 0]);                     // the draw hand: low and right of the string, so it sits below the frame at brace and passes behind the eye plane as the bow is drawn (the release aid is procedural)
   let arms = null;
 

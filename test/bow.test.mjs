@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createBowViewmodel } from '../src/bow.js';
+import { createBowViewmodel, createHeldBow } from '../src/bow.js';
 import { pinAngles } from '../src/sim.js';
 
 const D = 0.62;
@@ -56,7 +56,9 @@ test('assets that are not the bow model fall back to the procedural bow (the con
   } finally { console.warn = warn; }
 });
 
-test('model bow: the hidden string meshes stay out, the nock is left of and below the pin column, 0.395 m ahead', () => {
+const boxOf = (o) => new THREE.Box3().setFromObject(o, true);
+
+test('model bow: the hidden string meshes stay out, the nock is below the pin and 0.395 m ahead, and the arrow is on the LEFT of the riser (it is held in the left hand)', () => {
   const vm = createBowViewmodel({ pins, sightDist: D, assets: fakeAssets() });
   const hidden = [];
   vm.group.traverse((o) => { if (o.isMesh && o.name && !o.visible) hidden.push(o.name); });
@@ -64,7 +66,25 @@ test('model bow: the hidden string meshes stay out, the nock is left of and belo
   const cam = new THREE.PerspectiveCamera(); cam.add(vm.group);
   vm.setRaise(1); vm.setDraw(0); cam.updateMatrixWorld(true);
   const nock = new THREE.Vector3(); vm.group.getObjectByName('shaft').parent.getWorldPosition(nock);
-  assert.ok(Math.abs(nock.z - -0.395) < 1e-6 && nock.y < 0 && nock.x < 0, `nock at ${nock.toArray()}`);
+  assert.ok(Math.abs(nock.z - -0.395) < 1e-6 && nock.y < 0, `nock at ${nock.toArray()}`);
+  const grip = boxOf(vm.group.getObjectByName('Grip_Low'));
+  assert.ok(nock.x < grip.min.x + 1e-3, `the arrow (x ${nock.x}) is on the riser's left face (grip x ${grip.min.x} to ${grip.max.x})`);
+});
+
+test('model bow: the sight is mounted on the riser\'s left, the arrow\'s side: its arm runs from the pin housing on the view axis to the riser\'s left face', () => {
+  const vm = createBowViewmodel({ pins: one, sightDist: D, assets: fakeAssets() });
+  const cam = new THREE.PerspectiveCamera(); cam.add(vm.group);
+  vm.setRaise(1); vm.setDraw(0); cam.updateMatrixWorld(true);
+  const sight = boxOf(vm.sight.children.find((c) => !c.isMesh)), grip = boxOf(vm.group.getObjectByName('Grip_Low'));
+  assert.ok(sight.min.x > -0.01 && sight.min.x < 0.005, `the housing end is at the pin (x ${sight.min.x})`);
+  assert.ok(Math.abs(sight.max.x - grip.min.x) < 0.005, `the mounting end (x ${sight.max.x}) meets the riser's left face (x ${grip.min.x})`);
+});
+
+test('the carried bow is mirrored the same way: its string plane is on the left of the grip', () => {
+  const held = createHeldBow(fakeAssets()); held.updateMatrixWorld(true);
+  const grip = boxOf(held.getObjectByName('Grip_Low')).getCenter(new THREE.Vector3()), str = boxOf(held.getObjectByName('String_Low')).getCenter(new THREE.Vector3());
+  assert.ok(str.x < grip.x, `string x ${str.x} vs grip x ${grip.x}`);
+  assert.ok(str.z > grip.z - 0.2 && boxOf(held.getObjectByName('UpperWheel_Low')).getCenter(new THREE.Vector3()).y > 0, 'still limbs up (+y) and the string toward the archer (+z)');
 });
 
 for (const [label, assets] of [['procedural', null], ['model', fakeAssets()]]) {
