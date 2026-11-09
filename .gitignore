@@ -17,3 +17,6 @@ assets/world/columns.json
 
 # the copy of three.js that the Vercel build makes (vercel.json)
 /vendor/
+
+# the exporters of tools/export-sim-data.mjs and tools/geometry-fixtures.mjs write here by default
+sim-data/
