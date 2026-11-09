@@ -1,7 +1,9 @@
 // Exports the outpost as data for the Rust port of the simulation, so that there is one source of the level (this repo's level.js, shell-data.js and world-data.js) and the
 // engine reads what this writes:
 //
-//   node tools/export-sim-data.mjs [dir]     writes dir/outpost.level.json (default sim-data)
+//   node tools/export-sim-data.mjs [dir]     writes dir/outpost.level.json and dir/tuning.json (default sim-data)
+//
+// tuning.json is the simulation's TUNING table as it is (JSON keeps every double whole): the port compares its own copy of the numbers with it, field by field.
 //
 // Format (longdraw-level/1), all grids little-endian float32 as base64, row = z, column = x:
 //   terrain: the terrain function of the level (terrainHeight in level.js: bilinear between the 1 m samples, mirrored beyond the grid so it stays continuous), as its samples
@@ -14,7 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEVEL, terrainHeight } from '../src/level.js';
 import { WORLD } from '../src/world-data.js';
-import { buildLevel } from '../src/sim.js';
+import { buildLevel, TUNING } from '../src/sim.js';
 
 export const LEVEL_FORMAT = 'longdraw-level/1';
 const f32 = (a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString('base64');
@@ -42,5 +44,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync(dir, { recursive: true });
   const level = exportOutpost();
   writeFileSync(join(dir, 'outpost.level.json'), JSON.stringify(level));
+  writeFileSync(join(dir, 'tuning.json'), JSON.stringify(TUNING));
+  console.log(`tuning.json: ${Object.keys(TUNING).length} sections`);
   console.log(`outpost.level.json: ${level.def.boxes.length} boxes, ${level.def.props.length} props, ${level.def.spawns.length} spawns, ${level.built.w} x ${level.built.d} cells`);
 }
