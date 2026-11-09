@@ -42,6 +42,12 @@ const open = (spawns, boxes = [], extra = {}) => ({
 const hunter = (x, z, yaw = 0, patrol = []) => ({ role: 'hunter', x, z, yaw, patrol });
 const guard = { role: 'sleeper', x: 6, z: -6, yaw: 0 }; // keeps a level without other zombies from counting as cleared
 
+// Creeps up on the first zombie and knifes it when close.
+const stabFromBehind = (S) => {
+  const z = S.zombies[0], d = Math.hypot(z.x - S.player.x, z.z - S.player.z);
+  return { inp: { ...toward(S, z.x, z.z), crouch: true, aim: [0, 0, -1] }, acts: d < 1.5 && S.player.knifeCd === 0 && z.state !== 'dead' ? [{ do: 'knife' }] : [] };
+};
+
 export const SCENARIOS = [
   // the world alone: patrols, the random draws behind them, the wind, the bell, a binocular tag
   { name: 'idle-patrol', seed: 1, ticks: 3600, drive: (S, t) => ({ inp: {}, acts: t === 300 ? [{ do: 'tag', id: 4 }] : [] }) },
@@ -54,13 +60,7 @@ export const SCENARIOS = [
   // one whistling arrow into the valley, then keep still and watch the hunters come to look
   { name: 'lure-and-wait', seed: 5, ticks: 3000, drive: (S, t) => ({ inp: { aim: aimAt(S, -18, 0.3, 14), draw: t >= 30 && t < 110 }, acts: t === 1 ? [{ do: 'kind', v: 'lure' }] : [] }) },
   // a hunter facing away: creep up behind it and knife it (a silent kill), the sleeper is left
-  {
-    name: 'knife-from-behind', seed: 6, ticks: 1500, level: open([hunter(0, 10, Math.PI), guard]),
-    drive: (S) => {
-      const z = S.zombies[0], d = Math.hypot(z.x - S.player.x, z.z - S.player.z);
-      return { inp: { ...toward(S, z.x, z.z), crouch: true, aim: [0, 0, -1] }, acts: d < 1.5 && S.player.knifeCd === 0 && z.state !== 'dead' ? [{ do: 'knife' }] : [] };
-    },
-  },
+  { name: 'knife-from-behind', seed: 6, ticks: 1500, level: open([hunter(0, 10, Math.PI), guard]), drive: stabFromBehind },
   // a strong crosswind: three full draws at a target 40 m away, aimed straight at it, so the wind and the fall decide where the arrows land
   {
     name: 'wind-and-drop', seed: 7, ticks: 1500, level: open([hunter(0, -10, 0), guard], [], { wind: { speed: 8, dir: 1.2, swing: 0, vary: 0, gust: 0 } }),
@@ -86,5 +86,66 @@ export const SCENARIOS = [
   {
     name: 'fall-from-a-ledge', seed: 9, ticks: 900, level: open([hunter(14, 22, Math.PI / 2), guard], [{ x0: 0, x1: 4, z0: 20, z1: 24, y0: 0, y1: 2.4, tag: 'concrete' }], { start: { x: 2, z: 22, yaw: 0 } }),
     drive: (S, t) => ({ inp: { mx: t > 60 ? 1 : 0, mz: 0, aim: [1, 0, 0] } }),
+  },
+  // a hunter that faces the player and sees them coming: a stab is a plain one (a wound and a scream, not a silent kill), the second kills it
+  {
+    name: 'knife-from-the-front', seed: 11, ticks: 900, level: open([hunter(0, 10, 0), guard]),
+    drive: (S) => {
+      const z = S.zombies[0], dx = z.x - S.player.x, dz = z.z - S.player.z, d = Math.hypot(dx, dz) || 1;
+      return { inp: { ...(d > 1.2 ? toward(S, z.x, z.z) : {}), aim: [dx / d, 0, dz / d] }, acts: d < 1.6 && S.player.knifeCd === 0 && z.state !== 'dead' ? [{ do: 'knife' }] : [] };
+    },
+  },
+  // a sleeper right beside the player, outside the knife's arc: two swings at nothing (and one pressed during the cooldown, which does nothing); then facing it, a silent kill
+  {
+    name: 'knife-cone-and-miss', seed: 12, ticks: 400, level: open([{ role: 'sleeper', x: 1.2, z: 30, yaw: 0 }, guard]),
+    drive: (S, t) => ({ inp: { aim: t < 120 ? [0, 0, -1] : [1, 0, 0] }, acts: t === 20 || t === 90 || t === 100 || t === 160 ? [{ do: 'knife' }] : [] }),
+  },
+  // a scout high on a deck sees the player 16 m away and reports it: the hunter far out of sight is told and sets off, the sleeper out of earshot is not woken
+  {
+    name: 'scout-reports-to-a-hunter', seed: 13, ticks: 3000,
+    level: open([{ role: 'scout', x: 0, z: 14, yaw: 0, y: 5 }, hunter(-30, -30, 0, [[-30, -30]]), { role: 'sleeper', x: 30, z: -30, yaw: 0 }]),
+    drive: () => ({ inp: { aim: [0, 0, -1] } }),
+  },
+  // partial draws while walking to and fro, at a metal, a concrete and an asphalt wall 20 m away: each rings differently, and a hunter far behind hears them
+  {
+    name: 'impacts-on-three-surfaces', seed: 14, ticks: 800,
+    level: open([hunter(0, -30, Math.PI), guard], [
+      { x0: -7, x1: -5, z0: 8, z1: 10, y0: 0, y1: 3, tag: 'metal' }, { x0: -1, x1: 1, z0: 8, z1: 10, y0: 0, y1: 3, tag: 'concrete' }, { x0: 5, x1: 7, z0: 8, z1: 10, y0: 0, y1: 3, tag: 'asphalt' },
+    ]),
+    drive: (S, t) => {
+      const k = Math.floor((t - 30) / 200), phase = (t - 30) % 200, x = [-6, 0, 6][k];
+      if (t < 30 || x === undefined) return { inp: {} };
+      return { inp: { mx: t % 40 < 20 ? 1 : -1, mz: 0, aim: aimAt(S, x, 1.5, 9), draw: phase < 50 } };
+    },
+  },
+  // a head shot from 18 m kills a hunter that faces away, the arrow stays in it, and the player walks up and takes it back from the corpse
+  {
+    name: 'head-shot-and-retrieve-from-the-corpse', seed: 15, ticks: 1800, level: open([hunter(0, 12, Math.PI), guard]),
+    drive: (S, t) => {
+      const z = S.zombies[0];
+      if (z.state !== 'dead') return { inp: { aim: aimAt(S, z.x, z.y + 1.68, z.z), draw: t >= 30 && t < 110 } };
+      const held = S.arrows.some((a) => a.state === 'stuck' && a.zid === z.id), d = Math.hypot(z.x - S.player.x, z.z - S.player.z);
+      return { inp: { ...(d > 1.8 ? toward(S, z.x, z.z) : {}), aim: [0, 0, -1] }, acts: held && d <= 1.8 ? [{ do: 'retrieve' }] : [] };
+    },
+  },
+  // a chest shot from 6 m only wounds a hunter (it screams and charges); the arrow stays in it, and while it lives the player's tries to take the arrow back find nothing
+  {
+    name: 'a-wounded-zombie-keeps-the-arrow', seed: 19, ticks: 700, level: open([hunter(0, 24, Math.PI), guard]),
+    drive: (S, t) => {
+      const z = S.zombies[0];
+      return { inp: { aim: aimAt(S, z.x, z.y + 1.2, z.z), draw: t >= 30 && t < 110 }, acts: t >= 120 && t % 20 === 0 ? [{ do: 'retrieve' }] : [] };
+    },
+  },
+  // leaving by the bike: pressed too early (before going in) it does nothing; after a walk into the outpost and back, it ends the run
+  {
+    name: 'bail-at-the-bike', seed: 16, ticks: 900, level: open([hunter(0, -30, Math.PI), guard]),
+    drive: (S, t) => ({ inp: t < 400 ? { mx: 0, mz: -1 } : toward(S, 0, 30), acts: t === 10 || (t > 400 && Math.hypot(S.player.x, S.player.z - 30) < 2.5) ? [{ do: 'bail' }] : [] }),
+  },
+  // the only zombie is knifed from behind: the outpost is cleared and the run ends
+  { name: 'clear-the-outpost', seed: 17, ticks: 1500, level: open([hunter(0, 10, Math.PI)]), drive: stabFromBehind },
+  // a whistling arrow brings a hunter to look, then it searches, grows cautious and walks the patrol points it picked from the pool, one after another
+  {
+    name: 'lure-then-the-patrol-points', seed: 18, ticks: 5400, level: open([hunter(0, -6, Math.PI), guard]),
+    drive: (S, t) => ({ inp: { aim: aimAt(S, 0, 0.3, 10), draw: t >= 30 && t < 110 }, acts: t === 1 ? [{ do: 'kind', v: 'lure' }] : [] }),
   },
 ];
