@@ -13,7 +13,8 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const IN = `${ROOT}assets/models/incoming/`, OUT = `${ROOT}assets/world/`;
+// PREP_IN and PREP_OUT point the tool at other folders (the packs as extracted from the project owner's zips, and where to write), so that a build at another quality can sit beside the game's own.
+const IN = process.env.PREP_IN || `${ROOT}assets/models/incoming/`, OUT = process.env.PREP_OUT || `${ROOT}assets/world/`;
 const stage = process.argv[2];
 
 // ---- constants chosen by hand (see the analysis in the plan note) -------------------------------------------------------------
@@ -28,10 +29,16 @@ const FOOT = { x0: -14, x1: 8, z0: -6, z1: 14 }, FOOT_C = { x: -3.1, z: 3.8 };
 // sill height: the doorway then opens onto the pad, the stair sinks into the ground, and the interior floor is the sim's floor.
 const SILL = 1.2;
 // How much of the scan the outpost keeps: triangles after simplification (the scan has 1.3M), and the pixels of each texture (the scan's are 8192).
-export const OUTPOST = { tris: 220000, diffuse: 4096, normal: 2048 };
+// OUTPOST_TRIS, OUTPOST_DIFFUSE and OUTPOST_NORMAL override them (the engine's full-quality fort: every triangle, 8192 and 4096 pixels).
+export const OUTPOST = { tris: +process.env.OUTPOST_TRIS || 220000, diffuse: +process.env.OUTPOST_DIFFUSE || 4096, normal: +process.env.OUTPOST_NORMAL || 2048 };
 
 fs.mkdirSync(OUT, { recursive: true });
-const sips = (src, dst, px, q = 88) => execFileSync('sips', ['-Z', String(px), '-s', 'format', 'jpeg', '-s', 'formatOptions', String(q), src, '--out', dst], { stdio: 'ignore' });
+const sips = (src, dst, px, q = 88) => {
+  // a JPEG that is already no bigger than asked for is copied as it is: another round of JPEG compression would only lose quality
+  const wide = +execFileSync('sips', ['-g', 'pixelWidth', src]).toString().match(/pixelWidth: (\d+)/)[1];
+  if (wide <= px && /\.jpe?g$/i.test(src)) return fs.copyFileSync(src, dst);
+  execFileSync('sips', ['-Z', String(px), '-s', 'format', 'jpeg', '-s', 'formatOptions', String(q), src, '--out', dst], { stdio: 'ignore' });
+};
 
 // =============================================================================================================================
 async function terrain() {
