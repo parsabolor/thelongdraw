@@ -142,7 +142,7 @@ async function outpost() {
       for (let k = 1; k <= 3; k++) {
         const [vi, ti] = t[k].split('/'), key = (+vi - 1) * 1048576 + (+ti - 1);
         let id = uniq.get(key);
-        if (id === undefined) { id = pos.length / 3; uniq.set(key, id); const a = (+vi - 1) * 3, b = (+ti - 1) * 2; pos.push(P[a], P[a + 1], P[a + 2]); uv.push(UV[b], UV[b + 1]); }
+        if (id === undefined) { id = pos.length / 3; uniq.set(key, id); const a = (+vi - 1) * 3, b = (+ti - 1) * 2; pos.push(P[a], P[a + 1], P[a + 2]); uv.push(UV[b], 1 - UV[b + 1]); } // (OBJ's v runs up from the bottom of the image, glTF's down from the top: unflipped, every face showed the wrong part of the scan's photographs)
         cur.push(id);
       }
     }
