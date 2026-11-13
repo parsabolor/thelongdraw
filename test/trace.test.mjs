@@ -68,6 +68,9 @@ test('the scenarios added after the first port review cover what it found untest
   assert.ok(!ev('a-wounded-zombie-keeps-the-arrow').some((e) => e.type === 'retrieve') && ev('a-wounded-zombie-keeps-the-arrow').some((e) => e.type === 'wound'), 'but not out of a zombie that is still alive');
   assert.deepEqual(ev('bail-at-the-bike').filter((e) => e.type === 'over').map((e) => e.result), ['bailed'], 'pressed before going in it does nothing');
   assert.deepEqual(ev('clear-the-outpost').filter((e) => e.type === 'over').map((e) => e.result), ['cleared']);
+  const vest = ev('an-arrow-rings-off-the-armored-vest');
+  assert.deepEqual(vest.filter((e) => ['stick', 'wound', 'kill'].includes(e.type)).map((e) => [e.type, e.tag ?? e.how ?? null]), [['stick', 'metal'], ['wound', null], ['stick', 'flesh'], ['kill', 'head']],
+    'the armored zombie: an arrow rings off his vest and he cries out unhurt, then a head shot kills him');
   const pick = traces.find((t) => t.file === 'lure-then-the-patrol-points.json').trace;
   assert.ok(Math.max(...pick.checkpoints.map((c) => c.state.zombies[0].pi)) >= 3, 'a hunter walks on past the first patrol point it picked');
 });

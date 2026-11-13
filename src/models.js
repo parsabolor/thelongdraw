@@ -26,6 +26,9 @@ export const CFG = {
   zombie: { yaw: 0, height: 1.8, cycleSpeed: 0.36, clips: { idle: null, walk: null, run: null, attack: null, death: null } },
   player: { yaw: 0, height: 1.82, clips: { idle: null, walk: null, run: null, attack: null, death: null } },
   scout: { yaw: 0, height: 2.0, clips: { idle: null, walk: null, run: null, attack: null, death: null } }, // the supplied "dead man": one 11.7 s clip, so every state plays it
+  // the armored zombie (the engine's tools/import-zombie-soldier.py makes the file): keep: drawn as the file has him, in metres with his feet's point at the origin, not centred, scaled
+  // or varied, because he is placed so that the rules' hit spheres (sim.js PARTS) sit on his head and body; his walk covers 1.1 m/s, he has no run or death clip (he tips over)
+  armored: { yaw: 0, height: 1.95, keep: true, clips: { idle: null, walk: null, run: null, attack: null, death: null } },
 };
 const PATTERN = {
   idle: /idle|stand|breath|wait/i, walk: /walk|shamble|limp|move/i, run: /run|sprint|chase|charge|jog/i,
@@ -37,6 +40,7 @@ const FILES = {
   zombie: ['zombie.glb', 'zombie/scene.gltf', 'zombie/scene.glb', 'game/zombie.fbx'],
   player: ['player.glb', 'player/scene.gltf', 'player/scene.glb', 'game/survivor.fbx'],
   scout: ['game/scout.glb'], // from tools/prep-scout.mjs: the raw export has ten vertex attributes, which WebGPU cannot draw
+  armored: ['game/armored.glb'], // the engine's assets/models/zombie_soldier.glb, as it is
 };
 
 const ASSETS = new URL('../assets/', import.meta.url).href; // from this file, so any page (the game, dev/*.html) finds the files
@@ -107,7 +111,7 @@ function prepare(role, url, gltf) {
     console.warn(`[models] ${role} <- ${url}: no usable geometry, using the procedural figure`);
     return null;
   }
-  const scale = cfg.height / size.y;
+  const scale = cfg.keep ? 1 : cfg.height / size.y;
   const pick = (key) => {
     const o = cfg.clips[key];
     if (typeof o === 'number') return clips[o] || null;
@@ -135,10 +139,10 @@ function prepare(role, url, gltf) {
 }
 
 export async function loadModels() {
-  const [zombie, player, scout] = await Promise.all([tryLoad('zombie'), tryLoad('player'), tryLoad('scout')]);
+  const [zombie, player, scout, armored] = await Promise.all([tryLoad('zombie'), tryLoad('player'), tryLoad('scout'), tryLoad('armored')]);
   let credits = '';
   try { const r = await fetch(ASSETS + 'models/credits.txt'); if (r.ok) credits = (await r.text()).trim(); } catch { /* optional */ }
-  return { zombie, player, scout, credits };
+  return { zombie, player, scout, armored, credits };
 }
 
 // One tinted copy per (source material, kind), shared by every instance of that kind.
@@ -195,9 +199,9 @@ export function createFigure(entry, z = null) {
     o.material = Array.isArray(o.material) ? o.material.map((m) => material(m, tint)) : material(o.material, tint);
   });
   // the scout's own model keeps its own colours; a scout drawn with the ordinary zombie model stands taller and bluer, so it reads from afar
-  const s = entry.scale * (z ? (0.95 + 0.1 * rnd(z.id)) * (z.kind === 'scout' && entry.role !== 'scout' ? 1.12 : 1) : 1);
+  const s = entry.scale * (z && !cfg.keep ? (0.95 + 0.1 * rnd(z.id)) * (z.kind === 'scout' && entry.role !== 'scout' ? 1.12 : 1) : 1);
   const centre = new THREE.Group(), scaled = new THREE.Group(), turn = new THREE.Group(), root = new THREE.Group();
-  centre.position.set(-entry.center.x, -entry.min.y, -entry.center.z); // feet on the ground, middle at the origin
+  if (!cfg.keep) centre.position.set(-entry.center.x, -entry.min.y, -entry.center.z); // feet on the ground, middle at the origin
   centre.add(inst); scaled.scale.setScalar(s); scaled.add(centre); turn.rotation.y = cfg.yaw; turn.add(scaled); root.add(turn);
   const head = new THREE.Object3D(); head.position.y = cfg.height * 0.93; root.add(head);
 

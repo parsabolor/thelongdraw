@@ -11,6 +11,7 @@ const open = (spawns, boxes = [], terrain = null) => ({
 });
 const hunter = (x, z, yaw = 0) => ({ role: 'hunter', x, z, yaw, patrol: [] });
 const guard = { role: 'sleeper', x: 6, z: -6, yaw: 0 }; // keeps a level without other zombies from counting as cleared
+const armored = (x, z, yaw = 0) => ({ role: 'armored', x, z, yaw, patrol: [[x, z]], face: [yaw] }); // standing at his one stop
 const run = (S, seconds, inp = idle) => { for (let i = 0; i < Math.round(seconds / TUNING.dt); i++) step(S, inp); };
 
 test('the world is valid: no floating boxes; start, bike, every post and patrol point are connected ground, both ways; scouts overlook the pad', () => {
@@ -42,7 +43,7 @@ test('the world is valid: no floating boxes; start, bike, every post and patrol 
 });
 
 test('hunters can really run to the player across the rugged ground (A*, string-pulling and movement agree)', () => {
-  for (const sp of LEVEL.spawns.filter((s) => s.role === 'hunter' || s.role === 'screamer')) {
+  for (const sp of LEVEL.spawns.filter((s) => s.role === 'hunter' || s.role === 'screamer' || s.role === 'armored')) {
     const S = createState(LEVEL, 1), z = S.zombies.find((q) => Math.hypot(q.x - sp.x, q.z - sp.z) < 0.1);
     S.player.hp = 1e9; // the player stands at the start
     z.state = 'alert'; z.meter = 1; z.lkp = { x: S.player.x, z: S.player.z }; // told where the player is, and (as if it could still see them) never giving up
@@ -187,6 +188,77 @@ test('a headshot kills silently; a body shot wounds and screams', () => {
     assert.equal(body.stats.messy, 1);
     assert.ok(body.events.some((e) => e.type === 'noise' && e.kind === 'wound' && e.loud >= 0.9), 'a body shot screams');
   } finally { [B.spread, B.moveSpread, B.swayGrow] = saved; }
+});
+
+test('the armored zombie: an arrow in his chest or hips rings off his vest, unhurt but roused as by a wound; a head shot kills him; the knife works as on any zombie', () => {
+  const B = TUNING.bow, saved = [B.spread, B.moveSpread, B.swayGrow];
+  B.spread = B.moveSpread = B.swayGrow = 0;
+  try {
+    const shoot = (aimY, kind = 'basic') => { // from 10 m behind him: he faces away (+z), the player is at the origin
+      const S = createState(open([armored(0, 10, 0), guard]), 1);
+      S.player.x = 0; S.player.z = 0;
+      const dy = aimY - 1.4, n = Math.hypot(dy, 10);
+      fireArrow(S, [0, dy / n, 10 / n], 1, kind);
+      run(S, 0.3);
+      return S;
+    };
+    for (const [part, aimY] of [['chest', 1.2 + 0.12], ['hips', 0.7 + 0.12]]) {
+      const S = shoot(aimY), z = S.zombies[0], a = S.arrows[0];
+      assert.equal(z.hp, TUNING.zombie.hp, `a ${part} shot does him no harm`);
+      assert.equal(z.state, 'alert', 'but he hunts');
+      assert.deepEqual(z.lkp, { x: 0, z: 0 }, 'where the shot came from');
+      assert.ok(Math.cos(z.yaw - Math.PI) > 0.5, `and turns toward it: yaw ${z.yaw.toFixed(2)}`);
+      assert.deepEqual([a.state, a.tag, a.zid, a.part], ['stuck', 'metal', z.id, part], 'the arrow stays in his vest, and rang as metal');
+      assert.ok(S.events.some((e) => e.type === 'noise' && e.kind === 'impact' && e.tag === 'metal' && e.loud === TUNING.loud.metal), 'a hard impact\'s noise');
+      assert.ok(S.events.some((e) => e.type === 'wound' && e.id === z.id) && !S.events.some((e) => e.type === 'kill'), 'roused as a wound rouses (the cry), not killed');
+    }
+    const twice = shoot(1.2 + 0.12); twice.player.quiver.basic = 5;
+    const dy = 1.32 - 1.4, d = Math.hypot(twice.zombies[0].x, twice.zombies[0].z), n = Math.hypot(dy, d);
+    fireArrow(twice, [twice.zombies[0].x / n, dy / n, twice.zombies[0].z / n], 1, 'basic'); run(twice, 0.2);
+    assert.equal(twice.zombies[0].hp, TUNING.zombie.hp, 'however many');
+    const head = shoot(1.68 + 0.12);
+    assert.equal(head.zombies[0].state, 'dead', 'a head shot kills him');
+    assert.ok(head.events.some((e) => e.type === 'kill' && e.how === 'head'));
+    const lure = shoot(1.2 + 0.12, 'lure');
+    assert.deepEqual([lure.zombies[0].hp, lure.arrows[0].tag], [TUNING.zombie.hp, 'flesh'], 'a whistling arrow is as it always was');
+  } finally { [B.spread, B.moveSpread, B.swayGrow] = saved; }
+  const at = (z) => { const S = createState(open([z, guard]), 1); S.player.x = 0; S.player.z = 0; return S; }; // the player faces +z
+  const behind = at(armored(0, 1, 0));
+  assert.equal(knife(behind), true);
+  assert.equal(behind.zombies[0].state, 'dead', 'the knife from behind kills him without a sound');
+  assert.ok(behind.events.some((e) => e.type === 'knife' && e.silent && e.killed));
+  const front = at(armored(0, 1, Math.PI));
+  knife(front);
+  assert.equal(front.zombies[0].hp, TUNING.zombie.hp - 1, 'from the front, a stab wounds him as it wounds any zombie');
+  assert.throws(() => createState(open([{ role: 'armored', x: 0, z: 10, patrol: [[0, 10], [5, 10]] }]), 1), /facing/, 'his stops need the ways he faces');
+});
+
+test('the armored zombie on the outpost walks between his two stops, stands the full hold at each facing its set way without turning, and goes back to them after an alarm', () => {
+  const S = createState(LEVEL, 1), z = S.zombies.find((q) => q.kind === 'armored'), sp = LEVEL.spawns.find((q) => q.role === 'armored'), hold = TUNING.roles.armored.hold;
+  assert.ok(Math.hypot(sp.patrol[1][0] - sp.patrol[0][0], sp.patrol[1][1] - sp.patrol[0][1]) >= 10, 'A and B are 10 m or more apart');
+  const stands = []; // each time he stands: which stop, where, for how long, and his yaw from 3 s in to the end
+  let cur = null;
+  for (let i = 0; i < Math.round(110 / TUNING.dt); i++) {
+    step(S, idle);
+    if (z.wait > 0 && !cur) cur = { stop: (z.pi + 1) % 2, x: z.x, z: z.z, ticks: 0, yaws: [] };
+    if (cur && z.wait > 0) { cur.ticks++; if (cur.ticks * TUNING.dt > 3) cur.yaws.push(z.yaw); }
+    if (cur && z.wait <= 0) { stands.push(cur); cur = null; }
+  }
+  assert.equal(z.state, 'idle', 'nothing disturbed him');
+  assert.ok(stands.length >= 3 && stands.every((s, i) => s.stop === i % 2), `A, B, A and so on: ${stands.map((s) => 'AB'[s.stop]).join(' ')}`);
+  for (const s of stands) {
+    const [px, pz] = sp.patrol[s.stop], face = sp.face[s.stop];
+    assert.ok(Math.hypot(s.x - px, s.z - pz) < 1, `at his stop ${s.stop}`);
+    assert.ok(Math.abs(s.ticks * TUNING.dt - hold) < 2 * TUNING.dt, `for the whole hold, no more or less: ${(s.ticks * TUNING.dt).toFixed(2)} s`);
+    assert.ok(s.yaws.every((y) => Math.abs(Math.sin((y - face) / 2)) < 1e-3), `facing the set way (${face.toFixed(2)}) from 3 s in to the end, and not turning`);
+  }
+  // a loud noise beside him: he goes to look, searches, grows cautious, and walks his own route again (not one drawn from the pool)
+  emitNoise(S, z.x + 6, z.y + 1, z.z, 0.6, 'impact');
+  const states = new Set();
+  for (let i = 0; i < Math.round(150 / TUNING.dt) && !(states.has('caution') && z.wait > 0); i++) { step(S, idle); states.add(z.state); }
+  assert.ok(states.has('suspicious') && states.has('search') && states.has('caution'), [...states].join(' '));
+  assert.deepEqual(z.patrol, sp.patrol, 'his own route');
+  assert.ok(Math.hypot(z.x - sp.patrol[0][0], z.z - sp.patrol[0][1]) < 1, 'and he stands at A again');
 });
 
 test('an arrow in a zombie belongs to it: out of reach while it lives, picked up from the body once it is dead', () => {

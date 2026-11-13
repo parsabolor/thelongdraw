@@ -1,2 +1,3 @@
 Art supplied by the project owner (zombie, scout, survivor, kukri, arrow, motorcycle, lookout hut, compound bow, bow sight, terrain and outpost scans): free licences, no credit required.
 Trees are generated in code (src/trees.js). Ground and wall detail uses the CC0 Poly Haven textures in assets/textures (see CREDITS.md there).
+Armored zombie: this work is based on "Zombie Soldier" (https://sketchfab.com/3d-models/zombie-soldier-176e930e63d144cc8f615b8dd3a8c74f) by Peter_D (https://sketchfab.com/better_peter) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). Modified: rescaled, re-rigged for the game, clips retimed and trimmed, textures downscaled (the engine's tools/import-zombie-soldier.py).

@@ -4,7 +4,7 @@
   "level": {"bounds":{"x0":-40,"z0":-40,"w":80,"d":80},"boxes":[{"x0":-7,"x1":-5,"z0":8,"z1":10,"y0":0,"y1":3,"tag":"metal"},{"x0":-1,"x1":1,"z0":8,"z1":10,"y0":0,"y1":3,"tag":"concrete"},{"x0":5,"x1":7,"z0":8,"z1":10,"y0":0,"y1":3,"tag":"asphalt"}],"start":{"x":0,"z":30,"yaw":0},"bike":{"x":0,"z":30},"bell":{"x":0,"y":3,"z":0},"patrol":[[5,5],[-5,5],[5,-5]],"spawns":[{"role":"hunter","x":0,"z":-30,"yaw":3.141592653589793,"patrol":[]},{"role":"sleeper","x":6,"z":-6,"yaw":0}],"terrain":null},
   "seed": 14,
   "dt": 0.016666666666666666,
-  "tuning": "b9ac62f7c422e080",
+  "tuning": "a3c6f6e417ae244e",
   "ticks": 800,
   "inputs": [
     {"tick":30,"inp":{"mx":-1,"aim":[-0.274598,0.029941,-0.961093],"draw":true}},

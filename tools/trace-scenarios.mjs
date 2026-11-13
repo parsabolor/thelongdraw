@@ -55,8 +55,9 @@ export const SCENARIOS = [
   { name: 'creep-then-run', seed: 2, ticks: 3600, drive: (S, t) => ({ inp: { ...toward(S, -25, 16), crouch: t < 1200, run: t >= 1200 } }) },
   // run straight at the fort: hunted, attacks, the player is shoved and stunned
   { name: 'run-at-the-fort', seed: 3, ticks: 3600, drive: (S) => ({ inp: { ...toward(S, 0, 10), run: true } }) },
-  // shoot whatever is in sight from the start, plain arrows and then whistling ones: drop, wind, hits, wounds, kills, noise, wakings
-  { name: 'snipe-from-the-valley', seed: 4, ticks: 5400, drive: archer({ first: 60, period: 240, acts: { 1: [{ do: 'kind', v: 'basic' }], 1500: [{ do: 'kind', v: 'lure' }], 2100: [{ do: 'kind', v: 'basic' }] } }) },
+  // shoot whatever is in sight from the start, plain arrows and then whistling ones: drop, wind, hits, wounds, kills, noise, wakings (the armored zombie comes up from the gate through
+  // the arrows, which ring off his vest, and he is the one who kills the player)
+  { name: 'snipe-from-the-valley', seed: 4, ticks: 5400, drive: archer({ first: 60, period: 240, acts: { 1: [{ do: 'kind', v: 'basic' }], 1000: [{ do: 'kind', v: 'lure' }], 2100: [{ do: 'kind', v: 'basic' }] } }) },
   // one whistling arrow into the valley, then keep still and watch the hunters come to look
   { name: 'lure-and-wait', seed: 5, ticks: 3000, drive: (S, t) => ({ inp: { aim: aimAt(S, -18, 0.3, 14), draw: t >= 30 && t < 110 }, acts: t === 1 ? [{ do: 'kind', v: 'lure' }] : [] }) },
   // a hunter facing away: creep up behind it and knife it (a silent kill), the sleeper is left
@@ -143,6 +144,14 @@ export const SCENARIOS = [
   },
   // the only zombie is knifed from behind: the outpost is cleared and the run ends
   { name: 'clear-the-outpost', seed: 17, ticks: 1500, level: open([hunter(0, 10, Math.PI)]), drive: stabFromBehind },
+  // the armored zombie with his back to the player 20 m off: an arrow in his back rings off his vest (no harm: he cries out, turns and charges), then one in the head kills him
+  {
+    name: 'an-arrow-rings-off-the-armored-vest', seed: 20, ticks: 600, level: open([{ role: 'armored', x: 0, z: 10, yaw: Math.PI, patrol: [[0, 10]], face: [Math.PI] }, guard]),
+    drive: (S, t) => {
+      const z = S.zombies[0];
+      return { inp: { aim: aimAt(S, z.x, z.y + (t < 150 ? 1.2 : 1.68), z.z), draw: (t >= 30 && t < 110) || (t >= 150 && t < 230) } };
+    },
+  },
   // a whistling arrow brings a hunter to look, then it searches, grows cautious and walks the patrol points it picked from the pool, one after another
   {
     name: 'lure-then-the-patrol-points', seed: 18, ticks: 5400, level: open([hunter(0, -6, Math.PI), guard]),

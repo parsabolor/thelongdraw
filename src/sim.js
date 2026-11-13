@@ -27,6 +27,10 @@ export const TUNING = {
     scout: { sight: 40, fov: 80, hear: 1.6, patrol: false, vert: 40, gain: 0.6 },
     sleeper: { sight: 0, fov: 0, hear: 0.6, patrol: true, wake: 0.5 },
     screamer: { sight: 22, fov: 110, hear: 1, patrol: true },
+    // armored: sees and hears as a hunter. hold: he walks his own fixed route (the level's spawn gives it, with the way he faces at each stop in `face`), stands `hold` seconds at
+    // each stop facing that way without turning, and goes back to that route after any alarm (cautionEnter), never one drawn from the level's pool; so the player can learn it.
+    // armor: the body parts (PARTS) his vest covers: an arrow there rings off it and does him no harm, though it rouses him as a wound would (hitZombie)
+    armored: { sight: 20, fov: 100, hear: 1, patrol: true, hold: 15, armor: ['chest', 'hips'] },
   },
 };
 
@@ -382,10 +386,11 @@ export function createState(def, seed = 1) {
   S.windDef = def.wind || null; S.windPhase = windPhases(seed); S.wind = windAt(S);
   for (const s of def.spawns) {
     const rp = TUNING.roles[s.role];
+    if (rp.hold !== undefined && (s.face || []).length !== (s.patrol || []).length) throw new Error('a spawn that holds at its stops needs a facing for each: ' + JSON.stringify(s));
     const z = {
       id: S.nextId++, kind: s.role, role: s.role, x: s.x, z: s.z, y: s.y ?? heightAt(level, s.x, s.z), perch: s.y, yaw: s.yaw || 0, // `y` (a scout's lookout deck) stands it above the ground, and it stays there
       state: rp.wake ? 'dormant' : 'idle', meter: 0, sens: 1, hp: TUNING.zombie.hp, tagged: false, sees: false,
-      post: { x: s.x, z: s.z, yaw: s.yaw || 0 }, patrol: s.patrol || [], pi: 0, wait: 0, path: null, pi2: 0, goal: null, repath: 0,
+      post: { x: s.x, z: s.z, yaw: s.yaw || 0 }, patrol: s.patrol || [], face: s.face || [], pi: 0, wait: 0, path: null, pi2: 0, goal: null, repath: 0,
       point: null, arrived: false, searchC: null, leg: 0, lkp: null, stim: null, seenT: -99, lastStim: -99, heardT: -99, timer: 0, atk: 0, screamed: false, report: 0,
     };
     S.zombies.push(z);
@@ -497,7 +502,9 @@ function searchEnter(S, z, centre = z.lkp, time = TUNING.zombie.search, arrived 
 function cautionEnter(S, z) {
   setState(S, z, 'caution');
   z.timer = TUNING.zombie.caution; z.sens = TUNING.zombie.cautionSens;
-  z.patrol = z.role === 'scout' ? [] : pickPatrol(S); z.pi = 0; z.wait = 0; z.path = null; z.goal = null; z.lkp = null;
+  if (z.role === 'scout') z.patrol = [];
+  else if (TUNING.roles[z.role].hold === undefined) z.patrol = pickPatrol(S); // (one that holds at its stops keeps its own route)
+  z.pi = 0; z.wait = 0; z.path = null; z.goal = null; z.lkp = null;
   z.meter = Math.min(z.meter, TUNING.aware.suspicious - 0.05); // calm down, or it re-suspects the same spot at once
 }
 function idleEnter(S, z) {
@@ -538,7 +545,7 @@ function goTo(S, z, tx, tz, speed, dt) {
 const arrivedAt = (z, x, zz, r) => hyp(x - z.x, zz - z.z) < r;
 
 function patrol(S, z, dt) {
-  const Z = TUNING.zombie;
+  const Z = TUNING.zombie, hold = TUNING.roles[z.role].hold;
   if (z.role === 'scout') {
     if (hyp(z.post.x - z.x, z.post.z - z.z) > 1) goTo(S, z, z.post.x, z.post.z, Z.walk, dt);
     else z.yaw = z.post.yaw + Math.sin(S.t * 0.5 + z.id) * 1.0;
@@ -546,9 +553,14 @@ function patrol(S, z, dt) {
   }
   if (!z.patrol.length) return;
   const [px, pz] = z.patrol[z.pi % z.patrol.length];
-  if (z.wait > 0) { z.wait -= dt; z.yaw += 0.8 * dt; return; }
+  if (z.wait > 0) { // looking round, or (one that holds) turned to the way it faces at the stop it is at, and still
+    z.wait -= dt;
+    if (hold === undefined) z.yaw += 0.8 * dt;
+    else z.yaw = turn(z.yaw, z.face[(z.pi + z.patrol.length - 1) % z.patrol.length], 6 * dt);
+    return;
+  }
   goTo(S, z, px, pz, Z.walk, dt);
-  if (arrivedAt(z, px, pz, 1)) { z.pi++; z.wait = between(S, Z.wait); z.path = null; z.goal = null; }
+  if (arrivedAt(z, px, pz, 1)) { z.pi++; z.wait = hold ?? between(S, Z.wait); z.path = null; z.goal = null; }
 }
 
 function attack(S, z) {
@@ -715,16 +727,21 @@ function stick(S, a, x, y, z, tag) {
 function hitZombie(S, a, z, part, x, y, z2) {
   a.zid = z.id; a.part = part; // the renderer sticks the arrow to that body part, and retrieve() knows who is holding it
   if (a.kind === 'lure') return stick(S, a, x, y, z2, 'flesh'); // a whistling arrow does no damage
+  if (TUNING.roles[z.role].armor?.includes(part)) { // his vest stops it: it rings as off metal and stays in the vest, and he is roused as by a wound, unhurt
+    stick(S, a, x, y, z2, 'metal');
+    bodyHit(S, z, a.origin, a.dir, part, 'body', 0);
+    return;
+  }
   a.state = 'stuck'; a.x = x; a.y = y; a.z = z2; a.tag = 'flesh'; a.vx = a.vy = a.vz = 0;
   S.events.push({ type: 'stick', id: a.id, tag: 'flesh' });
   if (part === 'head') { kill(S, z, 'head', a.dir, 'head'); S.stats.clean++; return; }
   bodyHit(S, z, a.origin, a.dir, part, 'body');
 }
 
-// A hit that is not a headshot, shared by arrows and the knife so the two cannot drift apart: one hit point off; a kill if that was the
-// last, otherwise the zombie screams, turns toward `from` (where the blow came from) and goes alert. Returns true if it died.
-function bodyHit(S, z, from, dir, part, how) {
-  z.hp -= 1;
+// A hit that is not a headshot, shared by arrows and the knife so the two cannot drift apart: `harm` hit points off (1; 0 for an arrow his vest
+// stopped); a kill if that was the last, otherwise the zombie screams, turns toward `from` (where the blow came from) and goes alert. Returns true if it died.
+function bodyHit(S, z, from, dir, part, how, harm = 1) {
+  z.hp -= harm;
   if (z.hp <= 0) { kill(S, z, how, dir, part); return true; }
   S.stats.messy++;
   S.events.push({ type: 'wound', id: z.id });

@@ -129,6 +129,12 @@ for (const t of TOWERS) boxes.push({ x0: t.x - TOWER.half, x1: t.x + TOWER.half,
 const face = (x, z) => Math.atan2(-x, -z); // yaw that looks at the fort from (x, z)
 const START = { x: -43, z: 31, yaw: face(-43, 31) };
 const BIKE = { x: -40, z: 33 };
+// The armored zombie (sim.js TUNING.roles.armored) paces the slope in front of the gate, the way up from the bike to the battery: from A (-5.5, 21.5), where he stands looking
+// down the valley toward the bike, 10.2 m to B (4.5, 19.5), 8 m before the gate, where he stands watching the gate, and back; between them his back is to the valley half the time.
+// Both stops are in a fold of the slope that hides him from the start (not from the bike), clear of trees and rocks, and 6 to 9 m from the other patrols' points.
+const toward = ([x, z], [tx, tz]) => Math.atan2(tx - x, tz - z); // the yaw that looks from one place to another
+const STOP_A = [-5.5, 21.5], STOP_B = [4.5, 19.5], GATE = [1.4, 12]; // (the gate's middle: FORT, x 0.36 to 2.44 at z 12)
+const ARMORED = { role: 'armored', x: STOP_A[0], z: STOP_A[1], yaw: toward(STOP_A, [BIKE.x, BIKE.z]), patrol: [STOP_A, STOP_B], face: [toward(STOP_A, [BIKE.x, BIKE.z]), toward(STOP_B, GATE)] };
 const SPAWNS = [
   ...TOWERS.map((t) => ({ role: 'scout', x: t.x, z: t.z, y: t.base + TOWER.deck, yaw: t.yaw })), // south-east plateau, east rim over the pad, north ridge
   { role: 'hunter', x: -25, z: 16, yaw: 0, patrol: [[-25, 16], [-14, 22], [-16, 6], [-31, 17]] },   // the valley, first contact
@@ -141,6 +147,7 @@ const SPAWNS = [
   { role: 'sleeper', x: 3, z: 2, yaw: 0 },
   { role: 'sleeper', x: 2, z: -3, yaw: 0 },
   { role: 'screamer', x: -1, z: 9, yaw: 0, patrol: [[-1, 9], [-6, 8.5], [6.5, 9.5], [8.5, 8]] },     // guards the door, in the yard behind the gate
+  ARMORED,
 ];
 
 // ---------- trees and boulders: rejection scatter on gentle ground, clear of the pad and of every anchor ----------

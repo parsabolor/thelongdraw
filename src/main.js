@@ -204,7 +204,7 @@ function capsuleFigure(color) { // fallback when characters.js is missing
   return { root, head, update() {}, dispose() {} };
 }
 const makeZombie = (z) => {
-  const m = z.kind === 'scout' && models.scout ? models.scout : models.zombie; // scouts have their own model
+  const m = z.kind === 'scout' && models.scout ? models.scout : z.kind === 'armored' && models.armored ? models.armored : models.zombie; // scouts and the armored zombie have their own models
   return m ? modelMod.createFigure(m, z) : charMod ? charMod.createZombieFigure(z) : capsuleFigure(KIND_COLOR[z.kind]);
 };
 const makePlayer = () => (models.player ? modelMod.createFigure(models.player) : charMod ? charMod.createPlayerFigure() : capsuleFigure(0x4c6a8a));
@@ -537,9 +537,11 @@ function addRing(e) {
   r.m.visible = true;
 }
 function consumeEvents() {
+  let rang = false; // an arrow just rang off the armored zombie's vest (its 'stick' comes just before the 'wound' it makes)
   for (const e of S.events) {
     if (e.type === 'noise') addRing(e);
-    else if (e.type === 'wound') toast('Wounded: it screams');
+    else if (e.type === 'stick') rang = e.tag === 'metal' && !!S.arrows.find((a) => a.id === e.id)?.zid;
+    else if (e.type === 'wound') { toast(rang ? 'It rang off his vest: go for the head' : 'Wounded: it screams'); rang = false; }
     else if (e.type === 'blown') toast('Blown: they are coming');
     else if (e.type === 'tag') toast('Tagged');
     else if (e.type === 'wake') toast('Something woke up');
@@ -755,7 +757,9 @@ function drawMini() {
         if (z.state === 'search') { c.beginPath(); c.arc(spot.x, spot.z, TUNING.zombie.searchRadius, 0, Math.PI * 2); c.stroke(); } // the 20 m search area
       }
     }
-    c.fillStyle = z.tagged || debugAI ? css : '#ffffff'; c.beginPath(); c.arc(z.x, z.z, 1.3, 0, Math.PI * 2); c.fill();
+    c.fillStyle = z.tagged || debugAI ? css : '#ffffff';
+    if (z.kind === 'armored') c.fillRect(z.x - 1.3, z.z - 1.3, 2.6, 2.6); // the armored zombie a square, the others a round dot
+    else { c.beginPath(); c.arc(z.x, z.z, 1.3, 0, Math.PI * 2); c.fill(); }
   }
   const a = Math.PI / 2 - view.yaw;
   c.fillStyle = '#e8ecef'; c.beginPath();
