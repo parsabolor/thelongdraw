@@ -166,7 +166,7 @@ export const LEVEL = {
   start: START,
   bike: BIKE,
   enter: { x: 0, z: 0, r: 34 }, // the bike can be used to bail once the player is within 34 m of the fort
-  wind: { speed: 5.5, gust: 4.5, swing: 0.9 }, // m/s: swells between ~3.6 and 5.5, gusts to 10; the heading is set per run (see sim.windAt)
+  wind: { speed: 5.5, gust: 4.5, swing: 0.9 }, // m/s: swells between ~3.6 and 5.5, gusts to 10; the heading is set per run, and each speed and heading is held a few seconds (see sim.windAt)
   bell: { x: 5, y: 3.2, z: 8.5 },
   // Waypoints zombies re-draw their patrols from after a search, so the layout reshuffles.
   patrol: [[-10, 13.5], [10, 13.5], [-14, 0], [14, -4], [0, -14], [-12, -14], [12, -12], [0, 14], [-16, 6], [8, -8]],

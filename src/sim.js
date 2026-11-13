@@ -16,7 +16,7 @@ export const TUNING = {
   bow: { basic: 10, lure: 2, drawTime: 1.2, minDraw: 0.35, speed: 65, swaySecs: 6, spread: 0.004, moveSpread: 0.012, swayGrow: 0.006, reach: 2.2 },
   loud: { stepCrouch: 0.05, stepWalk: 0.15, stepRun: 0.35, release: 0.25, soft: 0.35, hard: 0.6, metal: 0.8, kill: 0.1, wound: 0.9, scream: 1, call: 0.8, whistle: 0.4, rummage: 0.08, landPerM: 0.12 },
   bell: { period: 8, ring: 1.6, mask: 0.4 },
-  wind: { drift: 0.45 }, // arrow acceleration per m/s of wind: 6 m/s moves a full-draw arrow ~0.5 m sideways at 40 m and ~1.1 m at 60 m
+  wind: { drift: 0.45, hold: 6, ease: 2 }, // drift: arrow acceleration per m/s of wind (6 m/s moves a full-draw arrow ~0.5 m sideways at 40 m, ~1.1 m at 60 m); hold, ease: see windAt
   aware: { suspicious: 0.3, alert: 0.8, decay: 0.05, sightGain: 1.1, hearGain: 1.5, told: 0.45, close: 3, occlude: 0.5, expose: { crouch: 0.5, still: 0.7, walk: 1, run: 1.5 } },
   zombie: { walk: 1.1, run: 3.4, pack: 12, scoutReport: 3, radius: 0.35, attackRange: 1.3, attackCd: 1, hp: 2, loseTime: 3, search: [30, 90], searchRadius: 20, investigate: [15, 30], caution: 30, cautionSens: 1.5, down: 0.6, wait: [2, 4], suspiciousWait: 3.5 },
   roles: {
@@ -338,6 +338,8 @@ export function findPath(L, ax, az, bx, bz, down = TUNING.zombie.down) {
 // A level opts in with def.wind = { speed, gust, swing, vary?, dir? }; without it the air is still.
 //   dir: the way the air moves, in the same angle as yaw (x = sin dir, z = cos dir); it wanders by +-swing radians around a per-run heading (or `dir`).
 //   speed: a slow swell between speed*(1-vary) and speed, plus gust bursts of up to `gust` m/s that are mostly absent.
+// The air keeps one speed and heading for TUNING.wind.hold seconds, then eases over TUNING.wind.ease seconds to the next, so that a shot can be read off the wind and
+// aimed before it moves: time is cut in slots of hold + ease seconds, and each slot's wind is the swell, gusts and swing above taken at the slot's start.
 const CALM = Object.freeze({ x: 0, z: 0, speed: 0, dir: 0, gust: 0 });
 function windPhases(seed) { // four angles from the seed alone: an integer hash, never S.rng
   return [1, 2, 3, 4].map((n) => {
@@ -345,14 +347,22 @@ function windPhases(seed) { // four angles from the seed alone: an integer hash,
     return ((x >>> 0) / 4294967296) * Math.PI * 2;
   });
 }
-export function windAt(S, t = S.t) {
-  const W = S.windDef;
-  if (!W) return CALM;
-  const p = S.windPhase;
+function windSample(W, p, t) { // the swell, gusts and swing at time t
   const dir = (W.dir ?? p[0]) + (W.swing || 0) * (Math.sin(t * 0.021 + p[1]) + 0.5 * Math.sin(t * 0.057 + p[2]));
   const base = W.speed * (1 - (W.vary ?? 0.35) * (0.5 - 0.5 * Math.sin(t * 0.033 + p[3])));
   const g = Math.max(0, Math.sin(t * 0.31 + p[1] * 2) * Math.sin(t * 0.113 + p[2] * 3)), gust = g * g;
-  const speed = base + (W.gust || 0) * gust;
+  return { speed: base + (W.gust || 0) * gust, dir, gust };
+}
+export function windAt(S, t = S.t) {
+  const W = S.windDef;
+  if (!W) return CALM;
+  const { hold, ease } = TUNING.wind, slot = hold + ease;
+  const k = Math.floor(t / slot), into = t - k * slot;
+  let { speed, dir, gust } = windSample(W, S.windPhase, k * slot);
+  if (into > hold) { // easing to the next slot's wind (smoothstep)
+    const b = windSample(W, S.windPhase, (k + 1) * slot), e = (into - hold) / ease, s = e * e * (3 - 2 * e);
+    speed += (b.speed - speed) * s; dir += (b.dir - dir) * s; gust += (b.gust - gust) * s;
+  }
   return { x: Math.sin(dir) * speed, z: Math.cos(dir) * speed, speed, dir, gust };
 }
 

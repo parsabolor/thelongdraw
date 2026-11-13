@@ -333,6 +333,17 @@ test('wind: a pure function of time and seed, still without a level wind, and it
   const speeds = []; for (let t = 0; t < 900; t++) speeds.push(windAt(a, t).speed);
   assert.ok(Math.max(...speeds) > Math.min(...speeds) + 2, 'it swells and gusts');
   assert.ok(Math.max(...speeds) <= W.speed + W.gust + 1e-9 && Math.min(...speeds) >= W.speed * 0.65 - 1e-9, 'within its range');
+  // it holds one speed and heading for TUNING.wind.hold seconds at a time, and moves to the next within TUNING.wind.ease seconds
+  const { hold, ease } = TUNING.wind, dt = 0.1, still = [], moving = [];
+  let prev = windAt(a, 0), kind = null, span = 0;
+  for (let i = 1; i <= 9000; i++) {
+    const w = windAt(a, i * dt), now = w.speed === prev.speed && w.dir === prev.dir ? still : moving;
+    if (kind && now !== kind) { kind.push(span); span = 0; }
+    kind = now; span += dt; prev = w;
+  }
+  assert.ok(moving.length > 100, `it moves now and then: ${moving.length} times in 900 s`);
+  assert.ok(still.every((s) => s >= hold - dt), `held at least ${hold} s each time: the shortest ${Math.min(...still).toFixed(2)} s`);
+  assert.ok(moving.every((m) => m <= ease + dt), `and moves within ${ease} s: the longest ${Math.max(...moving).toFixed(2)} s`);
 
   const D = 40, shot = (wind) => {
     const def = { ...open([guard], [{ x0: -10, x1: 10, z0: D, z1: D + 1, y0: 0, y1: 20, tag: 'concrete' }]), bounds: { x0: -15, z0: -10, w: 30, d: 90 }, wind };
