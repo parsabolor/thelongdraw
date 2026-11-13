@@ -9,6 +9,7 @@
 // only subdivide the same bilinear surface; the detail comes from the scan's normal map).
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
@@ -28,6 +29,19 @@ const FOOT = { x0: -14, x1: 8, z0: -6, z1: 14 }, FOOT_C = { x: -3.1, z: 3.8 };
 // The scan's door is up a short stair (0.2, 0.8, 1.2 m) onto a raised floor. The sim floor is the flat pad, so the whole model is lowered by the
 // sill height: the doorway then opens onto the pad, the stair sinks into the ground, and the interior floor is the sim's floor.
 const SILL = 1.2;
+// The scan's membranes: photogrammetry fill stretched across the hall, in front of the doorway and over the window openings, drawn as sheets you cannot walk through.
+// The photographs under them are dark (albedo luminance 30 to 60) where the walls are plaster and stone (70 to 170), so inside the hall and below its ceiling (2.75 m) a
+// triangle darker than MEMBRANE is one; above it, the soot on the ceiling is as dark and real. A cut at 90 took the darker plaster too (holes in the north and west walls),
+// so it is 70, and the lighter shards it leaves are in JUNK: boxes measured on the scan. Both in the world frame (`place`), where HALL is FOOT's building.
+const HALL = { x0: -6.3, x1: 7.2, z0: -6, z1: 6, y0: -0.5, y1: 2.6 }, MEMBRANE = 70;
+const JUNK = [
+  { x0: 0.5, x1: 2, z0: 1.2, z1: 5.45, y0: -0.5, y1: 2 },          // the porch: what is left of a box of membrane in front of the doorway
+  { x0: -5.33, x1: -4.32, z0: 4.9, z1: 6.2, y0: 0.86, y1: 2.3 },   // the window openings: the front wall's two
+  { x0: -2, x1: -0.87, z0: 4.9, z1: 6.2, y0: 0.94, y1: 2.3 },
+  { x0: 6, x1: 7.4, z0: -0.8, z1: 0.05, y0: 0.72, y1: 2.1 },       // and the east wall's two
+  { x0: 6, x1: 7.4, z0: 3.35, z1: 4.2, y0: 0.86, y1: 2.27 },
+];
+const inBox = (k, x, y, z) => x > k.x0 && x < k.x1 && y > k.y0 && y < k.y1 && z > k.z0 && z < k.z1;
 // How much of the scan the outpost keeps: triangles after simplification (the scan has 1.3M), and the pixels of each texture (the scan's are 8192).
 // OUTPOST_TRIS, OUTPOST_DIFFUSE and OUTPOST_NORMAL override them (the engine's full-quality fort: every triangle, 8192 and 4096 pixels).
 export const OUTPOST = { tris: +process.env.OUTPOST_TRIS || 220000, diffuse: +process.env.OUTPOST_DIFFUSE || 4096, normal: +process.env.OUTPOST_NORMAL || 2048 };
@@ -166,9 +180,32 @@ async function outpost() {
   const [pa, pb, pc] = [0, 1, 2].map((j) => det(col(j)) / dA); // ground(x, z) = pa x + pb z + pc
   const ground = (x, z) => pa * x + pb * z + pc;
   console.log(`ground plane around the fort: slope ${pa.toFixed(3)} / ${pb.toFixed(3)}, ${low.size} samples, level at the fort centre ${ground(FOOT_C.x, FOOT_C.z).toFixed(2)}`);
+  const base = ground(FOOT_C.x, FOOT_C.z) + 0.2 + SILL; // pad level in scan coordinates; walls sink into it so none float, and the door sill is the pad
+  const c = Math.cos(YAW), s = Math.sin(YAW);
+  const place = (x, y, z) => { const px = x - FOOT_C.x, pz = z - FOOT_C.z; return [c * px + s * pz, y - base, -s * px + c * pz]; };
 
-  // 3. keep the structure: drop ground-level up-facing triangles, everything below ground, thin slivers, and anything outside the fort
-  const keep = new Map(); const dropped = { ground: 0, under: 0, sliver: 0, outside: 0 };
+  // the albedo's luminance under a point of the texture (u, v as glTF has them), averaged over a few pixels of the photograph shrunk to 1024 (enough to tell a membrane
+  // from a wall); sips writes it as a BMP, which is read here
+  const albedo = new Map();
+  const luminance = (name, u, v) => {
+    if (!albedo.has(name)) {
+      const bmp = `${os.tmpdir()}/prep-world-${process.pid}-${name}.bmp`;
+      execFileSync('sips', ['-Z', '1024', '-s', 'format', 'bmp', `${D}${name}_diffuse.jpg`, '--out', bmp], { stdio: 'ignore' });
+      const b = fs.readFileSync(bmp); fs.unlinkSync(bmp);
+      const off = b.readUInt32LE(10), w = b.readInt32LE(18), hs = b.readInt32LE(22), h = Math.abs(hs), bpp = b.readUInt16LE(28) / 8, row = (w * bpp + 3) & ~3;
+      if (bpp !== 3 && bpp !== 4) throw new Error(`${name}_diffuse.jpg: sips wrote a ${bpp * 8}-bit BMP`);
+      const lum = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) { const r = off + (hs < 0 ? y : h - 1 - y) * row; for (let x = 0; x < w; x++) { const p = r + x * bpp; lum[y * w + x] = 0.0722 * b[p] + 0.7152 * b[p + 1] + 0.2126 * b[p + 2]; } } // rows top first; BGR
+      albedo.set(name, { w, h, lum });
+    }
+    const { w, h, lum } = albedo.get(name), x = Math.floor((u - Math.floor(u)) * w), y = Math.floor((v - Math.floor(v)) * h);
+    let sum = 0;
+    for (const dy of [-2, 0, 2]) for (const dx of [-2, 0, 2]) sum += lum[((y + dy + h) % h) * w + ((x + dx + w) % w)];
+    return sum / 9;
+  };
+
+  // 3. keep the structure: drop ground-level up-facing triangles, everything below ground, thin slivers, anything outside the fort, and the membranes (HALL, JUNK)
+  const keep = new Map(); const dropped = { ground: 0, under: 0, sliver: 0, outside: 0, junk: 0, membrane: 0 };
   for (const [name, list] of groups) {
     const out = [];
     for (let t = 0; t < list.length; t += 3) {
@@ -181,6 +218,12 @@ async function outpost() {
       const h = [ia, ib, ic].map((i) => V[i + 1] - ground(V[i], V[i + 2]));
       if (Math.max(...h) < -0.4) { dropped.under++; continue; }
       if (Math.max(...h) < 0.35 && Math.abs(ny) / area2 > 0.6) { dropped.ground++; continue; }
+      const [wx, wy, wz] = place((V[ia] + V[ib] + V[ic]) / 3, (V[ia + 1] + V[ib + 1] + V[ic + 1]) / 3, (V[ia + 2] + V[ib + 2] + V[ic + 2]) / 3);
+      if (JUNK.some((k) => inBox(k, wx, wy, wz))) { dropped.junk++; continue; }
+      if (inBox(HALL, wx, wy, wz)) {
+        const ta = list[t] * 2, tb = list[t + 1] * 2, tc = list[t + 2] * 2;
+        if (luminance(name, (TX[ta] + TX[tb] + TX[tc]) / 3, (TX[ta + 1] + TX[tb + 1] + TX[tc + 1]) / 3) < MEMBRANE) { dropped.membrane++; continue; }
+      }
       out.push(list[t], list[t + 1], list[t + 2]);
     }
     keep.set(name, out);
@@ -197,9 +240,6 @@ async function outpost() {
   console.log('removed', islands, 'island triangles');
 
   // 5. place in the world frame, simplify (UV-aware), smooth normals, write the GLB with downsized textures
-  const base = ground(FOOT_C.x, FOOT_C.z) + 0.2 + SILL; // pad level in scan coordinates; walls sink into it so none float, and the door sill is the pad
-  const c = Math.cos(YAW), s = Math.sin(YAW);
-  const place = (x, y, z) => { const px = x - FOOT_C.x, pz = z - FOOT_C.z; return [c * px + s * pz, y - base, -s * px + c * pz]; };
   const doc = new Document(), buffer = doc.createBuffer(), scene = doc.createScene(), node = doc.createNode('outpost'); scene.addChild(node);
   const mesh = doc.createMesh('outpost'); node.setMesh(mesh);
   const total = [...keep.values()].reduce((a, l) => a + l.length / 3, 0), TARGET = OUTPOST.tris;

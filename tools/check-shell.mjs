@@ -1,6 +1,6 @@
 // check-shell.mjs: how well does the sight shell agree with the model?   node tools/check-shell.mjs [segments]
 // Draws random eye-height segments in and around the outpost and asks two questions of each: does the sim's line of sight (src/sim.js hasLOS, over the boxes in
-// src/shell-data.js) say clear, and does the scan itself (tools/meshray.mjs, with CUTS applied) say clear? The two answers that differ are the shell's mistakes:
+// src/shell-data.js) say clear, and does the scan itself (tools/meshray.mjs) say clear? The two answers that differ are the shell's mistakes:
 //   shell clear, model blocked    a zombie or an arrow sees through a wall that is drawn
 //   shell blocked, model clear    a window, a doorway or a gap that is drawn but cannot be used
 // Short segments (< 2.5 m) and long ones (> 24 m) are left out; the ground is not part of this test (the sim has the terrain for it). A manual tool: run it after
@@ -8,11 +8,11 @@
 import { fileURLToPath } from 'node:url';
 import { loadMesh } from './meshray.mjs';
 import { buildLevel, hasLOS } from '../src/sim.js';
-import { CUTS, SIGHT_BOXES } from '../src/shell-data.js';
+import { SIGHT_BOXES } from '../src/shell-data.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const N = Number(process.argv[2] || 20000);
-const M = await loadMesh(ROOT + 'assets/world/outpost.glb', { ground: true, cuts: CUTS });
+const M = await loadMesh(ROOT + 'assets/world/outpost.glb', { ground: true });
 const L = buildLevel({ bounds: { x0: -30, z0: -30, w: 60, d: 60 }, boxes: SIGHT_BOXES.map((b) => ({ x0: b[0], x1: b[1], z0: b[2], z1: b[3], y0: b[4], y1: b[5], tag: 'rock', mode: 'sight' })) });
 let seed = 99; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const count = { both_clear: 0, both_blocked: 0, shell_clear_model_blocked: 0, shell_blocked_model_clear: 0 }, examples = { shell_clear_model_blocked: [], shell_blocked_model_clear: [] };

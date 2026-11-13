@@ -1,7 +1,6 @@
 // meshray.mjs: rays and segments against the triangles of a glb (the outpost scan), for tools/prep-shell.mjs and tools/check-shell.mjs.
-//   const M = await loadMesh(file, { ground: true, cuts: [{ x0, x1, z0, z1, y0, y1 }] })
+//   const M = await loadMesh(file, { ground: true })   every triangle of the first mesh, from all its primitives (one per material: the scan has three)
 //     ground: leave out the ground slab, steps and rubble (up- or down-facing triangles that lie below 1.3 m): the sim has the terrain for those
-//     cuts:   leave out every triangle whose centre lies inside one of these boxes (the same list main.js removes from the drawn model)
 //   M.hits(o, d, tmax, accept)  distances (sorted) of every triangle the ray o + t d (d a unit vector) hits for t < tmax; accept(t) may filter triangles
 //   M.blocked(a, b)             true if the segment a -> b is cut by any triangle
 //   M.tri(t)                    { nx, ny, nz, cx, cy, cz, ymax } of triangle t (unit normal, centre, highest corner)
@@ -10,9 +9,12 @@
 import { createRequire } from 'node:module';
 const { NodeIO } = createRequire(import.meta.url)('@gltf-transform/core');
 
-export async function loadMesh(file, { ground = true, cuts = [] } = {}) {
-  const doc = await new NodeIO().read(file), prim = doc.getRoot().listMeshes()[0].listPrimitives()[0];
-  const P = prim.getAttribute('POSITION').getArray(), I = prim.getIndices().getArray(), nT = I.length / 3;
+export async function loadMesh(file, { ground = true } = {}) {
+  const doc = await new NodeIO().read(file), prims = doc.getRoot().listMeshes()[0].listPrimitives(); // (reading only the first once left the back wall, in the second material, out of the shell)
+  const parts = prims.map((p) => [p.getAttribute('POSITION').getArray(), p.getIndices().getArray()]);
+  const P = new Float32Array(parts.reduce((n, [p]) => n + p.length, 0)), I = new Uint32Array(parts.reduce((n, [, i]) => n + i.length, 0));
+  for (let pv = 0, pi = 0, k = 0; k < parts.length; pv += parts[k][0].length, pi += parts[k][1].length, k++) { P.set(parts[k][0], pv); parts[k][1].forEach((v, j) => { I[pi + j] = v + pv / 3; }); }
+  const nT = I.length / 3;
   const nrm = new Float32Array(3 * nT), ctr = new Float32Array(3 * nT), ymax = new Float32Array(nT), kept = [];
   const b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
   for (let t = 0; t < nT; t++) {
@@ -23,7 +25,6 @@ export async function loadMesh(file, { ground = true, cuts = [] } = {}) {
     const cx = (P[a] + P[c] + P[d]) / 3, cy = (P[a + 1] + P[c + 1] + P[d + 1]) / 3, cz = (P[a + 2] + P[c + 2] + P[d + 2]) / 3;
     ctr[3 * t] = cx; ctr[3 * t + 1] = cy; ctr[3 * t + 2] = cz; ymax[t] = Math.max(P[a + 1], P[c + 1], P[d + 1]);
     if (ground && Math.abs(ny) > 0.75 && ymax[t] < 1.3) continue;
-    if (cuts.some((k) => cx >= k.x0 && cx <= k.x1 && cy >= k.y0 && cy <= k.y1 && cz >= k.z0 && cz <= k.z1)) continue;
     kept.push(t);
     for (const i of [a, c, d]) { b.x0 = Math.min(b.x0, P[i]); b.x1 = Math.max(b.x1, P[i]); b.y0 = Math.min(b.y0, P[i + 1]); b.y1 = Math.max(b.y1, P[i + 1]); b.z0 = Math.min(b.z0, P[i + 2]); b.z1 = Math.max(b.z1, P[i + 2]); }
   }

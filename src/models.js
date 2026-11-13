@@ -300,32 +300,16 @@ export async function loadProps() {
 }
 export const cloneProp = (entry) => clone(entry.root); // shares geometry and materials with the loaded prop
 
-// Removes from an indexed geometry (in the world frame) the triangles whose centre lies inside one of the boxes.
-function cutTriangles(geo, cuts) {
-  const idx = geo.index, pos = geo.attributes.position; if (!idx) return;
-  const src = idx.array, out = new src.constructor(src.length); let n = 0;
-  for (let i = 0; i < src.length; i += 3) {
-    const a = src[i], b = src[i + 1], c = src[i + 2];
-    const x = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, y = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, z = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-    if (cuts.some((k) => x >= k.x0 && x <= k.x1 && y >= k.y0 && y <= k.y1 && z >= k.z0 && z <= k.z1)) continue;
-    out[n++] = a; out[n++] = b; out[n++] = c;
-  }
-  geo.setIndex(new THREE.BufferAttribute(out.slice(0, n), 1));
-}
-
 // ---------- the world: the cleaned outpost scan ----------
-// assets/world/outpost.glb (tools/prep-world.mjs): the fort with the ground slab, the junk and the sliver removed, in the world frame (the pad is the
-// origin, y = 0). Returns the scene, or null if the file is missing (the grey collision boxes then stay visible).
-// `cuts` ([{ x0, x1, z0, z1, y0, y1 }], tools/prep-shell.mjs CUTS): triangles whose centre lies in one are left out of what is drawn, so the shards of collapsed stone across
-// the entrance are gone from the picture as they are from the collision shell. The scan is a one-sheet surface (its walls have no inside), so it is drawn from both sides:
-// standing in the porch or the hall, the walls are there instead of seen through.
-export async function loadOutpost(cuts = []) {
+// assets/world/outpost.glb (tools/prep-world.mjs): the fort with the ground slab, the junk (the membranes of photogrammetry fill) and the slivers removed, in the world
+// frame (the pad is the origin, y = 0). Returns the scene, or null if the file is missing (the grey collision boxes then stay visible). The scan is a one-sheet surface
+// (its walls have no inside), so it is drawn from both sides: standing in the hall, the walls are there instead of seen through.
+export async function loadOutpost() {
   try {
     const { scene } = await loadAny(ASSETS + 'world/outpost.glb');
     scene.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = o.receiveShadow = true;
-      if (cuts.length) cutTriangles(o.geometry, cuts);
       for (const m of [].concat(o.material)) { m.side = THREE.DoubleSide; m.roughness = 0.95; m.metalness = 0; if (m.map && m.emissive) { m.emissive.setRGB(0.05, 0.05, 0.05); m.emissiveMap = m.map; } } // never pure black at night, through the albedo
     });
     return scene;

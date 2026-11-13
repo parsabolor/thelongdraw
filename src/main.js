@@ -4,7 +4,6 @@
 import * as THREE from 'three';
 import { pass } from 'three/tsl';
 import { LEVEL, TOWER, TOWERS, terrainGrid } from './level.js';
-import { CUTS } from './shell-data.js';
 import { WORLD } from './world-data.js';
 import * as sim from './sim.js';
 import { loadMaterials, boxUV } from './materials.js';
@@ -262,7 +261,7 @@ propsReady.then(() => {
   }
 });
 // The outpost: the cleaned scan (assets/world/outpost.glb, built by tools/prep-world.mjs) in the world frame; the grey collision boxes it stands in for are hidden.
-if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost(CUTS)).then((fort) => {
+if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost()).then((fort) => {
   if (!fort) return;
   // the scan's wall texture is soft, so stone and plaster detail goes over it (src/detail.js)
   fort.traverse((o) => { if (o.isMesh) o.material = detailMaterial(o.material, [{ map: mats.concrete.map, meters: 1.0, strength: 1 }, { map: mats.rock.map, meters: 0.45, strength: 0.9 }]); });

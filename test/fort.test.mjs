@@ -1,6 +1,6 @@
 // Tests for the outpost's shell on the REAL level (src/level.js + src/shell-data.js, generated from the scan by tools/prep-shell.mjs): a body can walk in through the
-// doorway and from the open back, sight and arrows pass the windows and the doorway but not the solid wall, and the binoculars can tag a zombie inside through a window.
-// Measured on the scan: the front wall is at z about 5.7 with a doorway at x 0.9 to 1.9 and windows at x about -5.0 to -4.4 and -1.6 to -1.2; there is no back wall.
+// doorway and not through the back wall, sight and arrows pass the windows and the doorway but not the solid walls, and the binoculars can tag a zombie inside through a window.
+// Measured on the scan: the front wall is at z about 5.7 with a doorway at x 0.9 to 1.9 and windows at x about -5.3 to -4.3 and -2 to -0.9; the back wall is at z about -5.5.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVEL, TOWER, TOWERS, terrainHeight } from '../src/level.js';
@@ -19,14 +19,15 @@ function walk(S, pts, secs = 40) {
 }
 const place = (S, x, z) => { Object.assign(S.player, { x, z, y: heightAt(S.level, x, z), hp: 1e9 }); return S; };
 
-test('the fort can be entered: through the doorway (even 0.12 m off its middle) and from the open back', () => {
+test('the fort can be entered through the doorway (even 0.12 m off its middle), and not through the back wall', () => {
   for (const x0 of [1.38, 1.5, 1.62]) {
     const S = place(fresh(), x0, 9);
     assert.equal(walk(S, [[x0, 7], [1.5, 5.6], [1.5, 4], [1.5, 2.2], [0.5, 0.8], [0, -1]]), 6, `a body at x ${x0} gets through the door and the porch into the hall`);
     assert.ok(S.player.z < 0, 'and is inside');
   }
-  const back = place(fresh(), 0, -9);
-  assert.equal(walk(back, [[0, -6], [0, -3], [0, 0]]), 3, 'the scan has no back wall: a body walks in from the north');
+  const back = place(fresh(), 1, -9);
+  assert.ok(walk(back, [[1, -6.5], [1, -3], [1, 0]], 10) < 3, 'the back wall (once missing from the shell: it is in the scan\'s second material) stops a body');
+  assert.ok(back.player.z < -5, `and it stays outside (z ${back.player.z.toFixed(2)})`);
   const path = findPath(fresh().level, 1.5, 9, 0, -1);
   assert.ok(path && Math.hypot(path.at(-1)[0] - 0, path.at(-1)[1] + 1) < 1, 'the planner finds the way in too');
 });
@@ -45,7 +46,20 @@ test('sight and arrows pass the windows and the doorway, and stop at the solid w
   assert.ok(los(-1.4), 'the second window');
   assert.ok(los(1.4), 'the doorway');
   for (const x of [-2.5, 3, 5, -6.8]) assert.ok(!los(x), `the wall at x ${x}`);
-  assert.ok(hasLOS(L, 0, 1.6, -9, 0, 1.6, 0), 'and into the hall from the open back');
+  assert.ok(!hasLOS(L, 1, 1.6, -9, 1, 1.6, 0), 'nor through the back wall');
+  const east = (z) => hasLOS(L, 10, 1.5, z, 3, 1.4, z); // from outside the east wall (x about 6.9), in through it at z
+  assert.ok(east(-0.4), 'the east wall\'s first window');
+  assert.ok(east(3.8), 'its second window');
+  assert.ok(!east(1.6), 'the east wall between them');
+});
+
+test('the hall is open: a body crosses it where the scan had membranes (sheets of photogrammetry fill) and the sight crosses it too', () => {
+  const S = place(fresh(), 1.5, 4.5); // just inside the doorway
+  const across = [[1.5, 0], [3.5, 0], [4.5, -2.5], [0, -1], [-4, 2], [3, 3.5]];
+  assert.equal(walk(S, across), across.length, 'through the middle of the hall, the east side, the north-east corner, the west side and back');
+  const L = S.level;
+  assert.ok(hasLOS(L, -4, 1.5, 2, 5, 1.5, -1), 'from the west side of the hall to the east');
+  assert.ok(hasLOS(L, 1.4, 1.5, 4.5, 4.5, 1.5, -2.5), 'from the doorway to the north-east corner');
 });
 
 test('the binoculars see a zombie inside through a window or the doorway, not through the wall, and can tag it', () => {
