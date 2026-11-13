@@ -1,5 +1,6 @@
 // meshray.mjs: rays and segments against the triangles of a glb (the outpost scan), for tools/prep-shell.mjs and tools/check-shell.mjs.
-//   const M = await loadMesh(file, { ground: true })   every triangle of the first mesh, from all its primitives (one per material: the scan has three)
+//   const M = await loadMesh(file, { ground: true, placed: [{ file, x, y, z, yaw }] })   every triangle of the first mesh, from all its primitives (one per material: the scan
+//     has three), and of each placed model's, stood at (x, y, z) and turned by yaw about y (as three.js turns it: the level's fortress pieces)
 //     ground: leave out the ground slab, steps and rubble (up- or down-facing triangles that lie below 1.3 m): the sim has the terrain for those
 //   M.hits(o, d, tmax, accept)  distances (sorted) of every triangle the ray o + t d (d a unit vector) hits for t < tmax; accept(t) may filter triangles
 //   M.blocked(a, b)             true if the segment a -> b is cut by any triangle
@@ -9,9 +10,17 @@
 import { createRequire } from 'node:module';
 const { NodeIO } = createRequire(import.meta.url)('@gltf-transform/core');
 
-export async function loadMesh(file, { ground = true } = {}) {
-  const doc = await new NodeIO().read(file), prims = doc.getRoot().listMeshes()[0].listPrimitives(); // (reading only the first once left the back wall, in the second material, out of the shell)
-  const parts = prims.map((p) => [p.getAttribute('POSITION').getArray(), p.getIndices().getArray()]);
+export async function loadMesh(file, { ground = true, placed = [] } = {}) {
+  const io = new NodeIO(), read = async (f) => (await io.read(f)).getRoot().listMeshes()[0].listPrimitives().map((p) => [p.getAttribute('POSITION').getArray(), p.getIndices().getArray()]);
+  const parts = await read(file); // (all its primitives: reading only the first once left the back wall, in the second material, out of the shell)
+  for (const { file: f, x, y, z, yaw } of placed) {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    for (const [p, i] of await read(f)) {
+      const q = new Float32Array(p.length);
+      for (let k = 0; k < p.length; k += 3) { q[k] = c * p[k] + s * p[k + 2] + x; q[k + 1] = p[k + 1] + y; q[k + 2] = -s * p[k] + c * p[k + 2] + z; }
+      parts.push([q, i]);
+    }
+  }
   const P = new Float32Array(parts.reduce((n, [p]) => n + p.length, 0)), I = new Uint32Array(parts.reduce((n, [, i]) => n + i.length, 0));
   for (let pv = 0, pi = 0, k = 0; k < parts.length; pv += parts[k][0].length, pi += parts[k][1].length, k++) { P.set(parts[k][0], pv); parts[k][1].forEach((v, j) => { I[pi + j] = v + pv / 3; }); }
   const nT = I.length / 3;

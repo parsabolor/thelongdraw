@@ -7,12 +7,13 @@
 // tools/prep-shell.mjs or after changing the model, and read the percentages.
 import { fileURLToPath } from 'node:url';
 import { loadMesh } from './meshray.mjs';
+import { fortress } from './prep-shell.mjs';
 import { buildLevel, hasLOS } from '../src/sim.js';
 import { SIGHT_BOXES } from '../src/shell-data.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const N = Number(process.argv[2] || 20000);
-const M = await loadMesh(ROOT + 'assets/world/outpost.glb', { ground: true });
+const M = await loadMesh(ROOT + 'assets/world/outpost.glb', { ground: true, placed: fortress() });
 const L = buildLevel({ bounds: { x0: -30, z0: -30, w: 60, d: 60 }, boxes: SIGHT_BOXES.map((b) => ({ x0: b[0], x1: b[1], z0: b[2], z1: b[3], y0: b[4], y1: b[5], tag: 'rock', mode: 'sight' })) });
 let seed = 99; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const count = { both_clear: 0, both_blocked: 0, shell_clear_model_blocked: 0, shell_blocked_model_clear: 0 }, examples = { shell_clear_model_blocked: [], shell_blocked_model_clear: [] };

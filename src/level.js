@@ -34,6 +34,36 @@ for (const t of TOWERS) {
     grid[j * N + i] += (t.base - grid[j * N + i]) * w;
   }
 }
+// ---------- the fortress round the outpost (Poly Haven's Modular Fort 01 and Large Castle Door, CC0; the models are made by the engine's tools/import-fortress.py) ----------
+// A wall closes a 24 m square round the hall: its gate in the south side, in line with the hall's doorway; the north-east corner tower left out, a breach about 3 m across.
+// w, e, n, s: the outer faces' lines (the square is 0.81 m west of the pad's middle, so that the gate's opening, 1.165 to 3.250 m along its piece, is at x 0.36 to 2.44 round
+// the doorway's 1.4); corner, long, short: the pieces' lengths along the wall (the kit's at its scale 0.5954, which closes the 24 m exactly); depth: the walls' thickness. The
+// pieces stand `sink` m into the ground, and the ground is level (the pad's 0) within `flat` m of their outer faces and back to the hillside over `blend` m more, as under the
+// towers: the shell's body boxes for the walls need ground that is exactly 0.
+export const FORT = { w: -12.81, e: 11.19, n: -12, s: 12, corner: 3.1765, long: 8.8238, short: 4.4119, depth: 1.5183, gate: [1.165, 3.25], sink: 0.2, flat: 1, blend: 4 };
+for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+  const x = LO + i * WORLD.step, z = LO + j * WORLD.step;
+  const d = Math.hypot(Math.max(FORT.w - FORT.flat - x, 0, x - FORT.e - FORT.flat), Math.max(FORT.n - FORT.flat - z, 0, z - FORT.s - FORT.flat)); if (d > FORT.blend) continue;
+  const u = d / FORT.blend, w = 1 - u * u * (3 - 2 * u);
+  grid[j * N + i] += (0 - grid[j * N + i]) * w;
+}
+// The pieces (assets/models/game/fortress/<piece>.glb), each where its start (its outer face, on its foot) stands and how it is turned: a piece runs along its own +z with its
+// battered outer face on its x 0, and `yaw` (about y, as three.js turns it) lays it along a side with its outer face on that side's line. The door's two leaves are hinged just
+// inside the gate's opening and stand open into the yard: one wide, one ajar, clear of the one whole cell of the 1 m movement grid through the gate (x 1 to 2).
+export const WALLS = [];
+{
+  const { w, e, n, s, corner: c } = FORT, y = -FORT.sink, length = { wall_long: FORT.long, wall_short: FORT.short, wall_gate: FORT.short };
+  const run = (pieces, yaw, [x, z], [dx, dz]) => { let t = 0; for (const piece of pieces) { WALLS.push({ piece, x: x + dx * t, z: z + dz * t, y, yaw }); t += length[piece]; } };
+  run(['wall_long', 'wall_long'], 0, [w, n + c], [0, 1]); // west, running south
+  run(['wall_long', 'wall_gate', 'wall_short'], Math.PI / 2, [w + c, s], [1, 0]); // south, running east
+  run(['wall_long', 'wall_long'], Math.PI, [e, s - c], [0, -1]); // east, running north
+  run(['wall_long', 'wall_long'], -Math.PI / 2, [e - c, n], [-1, 0]); // north, running west from the breach
+  for (const [x, z, yaw] of [[w, n, 0], [w, s, Math.PI / 2], [e, s, Math.PI]]) WALLS.push({ piece: 'wall_corner', x, z, y, yaw }); // the north-west, south-west and south-east towers
+  const gate = WALLS.find((p) => p.piece === 'wall_gate'), inside = s - FORT.depth - 0.05;
+  WALLS.push({ piece: 'door_leaf_left', x: gate.x + FORT.gate[0] + 0.02, z: inside, y: 0, yaw: 95 * Math.PI / 180 }); // shuts along +x: open wide
+  WALLS.push({ piece: 'door_leaf_right', x: gate.x + FORT.gate[1] - 0.02, z: inside, y: 0, yaw: -70 * Math.PI / 180 }); // shuts along -x: ajar
+}
+
 // The renderer's ground: a smooth (Catmull-Rom) surface through the SAME 1 m samples, so it meets terrainHeight at every grid point and is only a few
 // centimetres off between them (p99 about 11 cm), without the facets of the bilinear one. The sim keeps terrainHeight: ground contact, line of sight and
 // path finding all stay as they were; the renderer subdivides its mesh finely and takes the heights from here.
@@ -102,15 +132,15 @@ const BIKE = { x: -40, z: 33 };
 const SPAWNS = [
   ...TOWERS.map((t) => ({ role: 'scout', x: t.x, z: t.z, y: t.base + TOWER.deck, yaw: t.yaw })), // south-east plateau, east rim over the pad, north ridge
   { role: 'hunter', x: -25, z: 16, yaw: 0, patrol: [[-25, 16], [-14, 22], [-16, 6], [-31, 17]] },   // the valley, first contact
-  { role: 'hunter', x: -10, z: 12, yaw: 0, patrol: [[-10, 12], [-16, 6], [-11, 0], [-14, 13]] },    // west of the fort
-  { role: 'hunter', x: 13, z: 12, yaw: 0, patrol: [[13, 12], [8, 14], [4, 12], [12, 6]] },          // at the foot of the escarpment
-  { role: 'hunter', x: -12, z: -14, yaw: 0, patrol: [[-12, -14], [-4, -18], [4, -14], [-8, -10]] }, // behind the fort
+  { role: 'hunter', x: -10, z: 13.5, yaw: 0, patrol: [[-10, 13.5], [-16, 6], [-14, 0], [-14, 13]] }, // west of the fort (outside its wall)
+  { role: 'hunter', x: 13, z: 12, yaw: 0, patrol: [[13, 12], [8, 14], [4, 13.5], [13.5, 6]] },      // at the foot of the escarpment, round the south-east tower
+  { role: 'hunter', x: -12, z: -14, yaw: 0, patrol: [[-12, -14], [-4, -18], [4, -14], [-8, -14]] }, // behind the fort (outside its wall)
   { role: 'hunter', x: 12, z: -12, yaw: 0, patrol: [[12, -12], [14, -6], [8, -16], [14, -18]] },    // north-east basin
   { role: 'sleeper', x: -4, z: 3, yaw: 0 },               // inside the fort
   { role: 'sleeper', x: -1, z: -3, yaw: 0 },
   { role: 'sleeper', x: 3, z: 2, yaw: 0 },
   { role: 'sleeper', x: 2, z: -3, yaw: 0 },
-  { role: 'screamer', x: 2, z: 10, yaw: 0, patrol: [[2, 10], [-4, 11], [6, 11], [10, 8]] },          // guards the door
+  { role: 'screamer', x: -1, z: 9, yaw: 0, patrol: [[-1, 9], [-6, 8.5], [6.5, 9.5], [8.5, 8]] },     // guards the door, in the yard behind the gate
 ];
 
 // ---------- trees and boulders: rejection scatter on gentle ground, clear of the pad and of every anchor ----------
@@ -139,7 +169,8 @@ export const LEVEL = {
   wind: { speed: 5.5, gust: 4.5, swing: 0.9 }, // m/s: swells between ~3.6 and 5.5, gusts to 10; the heading is set per run (see sim.windAt)
   bell: { x: 5, y: 3.2, z: 8.5 },
   // Waypoints zombies re-draw their patrols from after a search, so the layout reshuffles.
-  patrol: [[-10, 12], [10, 12], [-14, 0], [14, -4], [0, -14], [-12, -14], [12, -12], [0, 14], [-16, 6], [8, -8]],
+  patrol: [[-10, 13.5], [10, 13.5], [-14, 0], [14, -4], [0, -14], [-12, -14], [12, -12], [0, 14], [-16, 6], [8, -8]],
   spawns: SPAWNS,
+  walls: WALLS, // drawn only (the shell has their solid parts): the fortress round the outpost, see FORT
 };
 LEVEL.props = scatter(11, [[START.x, START.z, 6], [BIKE.x, BIKE.z, 4], ...TOWERS.map((t) => [t.x, t.z, TOWER.flat + 1]), ...SPAWNS.flatMap((s) => [[s.x, s.z, 3], ...(s.patrol || []).map(([x, z]) => [x, z, 2.5])]), ...LEVEL.patrol.map(([x, z]) => [x, z, 2.5])]);

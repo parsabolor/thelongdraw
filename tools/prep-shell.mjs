@@ -1,5 +1,5 @@
 // prep-shell.mjs: builds the SIGHT SHELL of the outpost from the scan itself, so that arrows, zombies' eyes and the binoculars see what the model shows.
-//   node tools/prep-shell.mjs        reads assets/world/outpost.glb, writes src/shell-data.js (GENERATED: commit it)
+//   node tools/prep-shell.mjs        reads assets/world/outpost.glb and the fortress round it (level.js WALLS), writes src/shell-data.js (GENERATED: commit it)
 // The scan is a one-sided sheet (its walls have no thickness) with window slots, a door and holes. Hand-placed 1 m boxes could not follow that, so the shell is
 // sampled from the model: rays along z and along x (through the walls) and along y (above 1.8 m: the roof deck, parapets, the tower's top) mark 0.1 m voxels at
 // every wall-like or deck-like hit, thickened along the ray by 0.2 m each way (a wall is 0.4 m thick); a window is simply a place where no ray hit. The voxels
@@ -8,15 +8,18 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadMesh } from './meshray.mjs';
+import { WALLS } from '../src/level.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)), GLB = ROOT + 'assets/world/outpost.glb', OUT = ROOT + 'src/shell-data.js';
+// the fortress's walls and the gate's open leaves where level.js stands them (assets/models/game/fortress/: tools/import-fortress.py of the engine), for meshray's `placed`
+export const fortress = () => WALLS.map((p) => ({ file: ROOT + 'assets/models/game/fortress/' + p.piece + '.glb', x: p.x, y: p.y, z: p.z, yaw: p.yaw }));
 // voxel size, thickening each way, the smallest box kept (m3), where flat surfaces start to count (the first three can be tried out as STEP=, HALF=, MINV= in the environment)
 // cells [x, z] (the cell whose lower corner is x, z) kept open or closed for bodies whatever the shell fills: the front doorway (x 1..2) and the porch corridor behind it
 const BODY_FREE = [[1, 5], [1, 4], [1, 3], [1, 2]], BODY_SOLID = [], BODY_FILL = Number(process.env.FILL || 0.15);
 const STEP = Number(process.env.STEP || 0.1), HALF = Number(process.env.HALF || 0.1), MIN_VOLUME = Number(process.env.MINV || 0.01), ROOF_FROM = 1.8, COMP = Number(process.env.COMP || 0.5), SNAP = Number(process.env.SNAP || 0.2);
 
 async function main() {
-  const M = await loadMesh(GLB, { ground: true }), B = M.bounds;
+  const M = await loadMesh(GLB, { ground: true, placed: fortress() }), B = M.bounds;
   const ox = Math.floor(B.x0) - 1, oy = Math.max(0, Math.floor(B.y0)), oz = Math.floor(B.z0) - 1;
   const nx = Math.ceil((B.x1 + 1 - ox) / STEP), ny = Math.ceil((B.y1 + 0.5 - oy) / STEP), nz = Math.ceil((B.z1 + 1 - oz) / STEP);
   const vox = new Uint8Array(nx * ny * nz), at = (ix, iy, iz) => (iz * ny + iy) * nx + ix;

@@ -59,7 +59,7 @@ The simulation, level, tools and animation maths run in Node with no browser (`t
 
 ## Art and licences
 
-- **What is in the repository:** the characters, weapons, bike, lookout tower, and the terrain and outpost scans, trimmed for the browser (`assets/models/game/`, `assets/world/`, 45 MB), and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`). The trees are generated in code.
+- **What is in the repository:** the characters, weapons, bike, lookout tower, and the terrain and outpost scans, trimmed for the browser (`assets/models/game/`, `assets/world/`, 45 MB), the fortress round the outpost (`assets/models/game/fortress/`, CC0 from Poly Haven, see its `CREDITS.md`), and the CC0 textures in `assets/textures/` (Poly Haven, see `assets/textures/CREDITS.md`). The trees are generated in code.
 - **Licences:** the owner who downloaded that art says it is all under free licences that need no credit. The download packs carry no licence files, so this repository has no per-model licence record: if you reuse a model outside this project, check where it came from.
 - **What is not:** the raw downloads (about 800 MB, `assets/models/incoming/`), which are too large for git. `tools/prep-assets.mjs`, `prep-scout.mjs` and `prep-world.mjs` rebuild the trimmed files from them if you have them. `src/world-data.js` is baked from the terrain scan by `node tools/prep-world.mjs terrain`.
 - **Using your own art:** see `assets/models/README.md`. Every model is optional: delete one and the game falls back to a built-in stand-in (procedural people, a textured box for the fort, a neutral ground).

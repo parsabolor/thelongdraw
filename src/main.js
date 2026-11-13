@@ -266,6 +266,8 @@ if (modelMod) backgroundLoads.then(() => modelMod.loadOutpost()).then((fort) => 
   // the scan's wall texture is soft, so stone and plaster detail goes over it (src/detail.js)
   fort.traverse((o) => { if (o.isMesh) o.material = detailMaterial(o.material, [{ map: mats.concrete.map, meters: 1.0, strength: 1 }, { map: mats.rock.map, meters: 0.45, strength: 0.9 }]); });
   scene.add(fort); for (const { mesh } of skinBoxes.outpost || []) mesh.visible = false; });
+// The fortress round it (level.js WALLS): its walls and the gate's open leaves.
+if (modelMod) backgroundLoads.then(() => modelMod.loadFortress(LEVEL.walls)).then((walls) => { if (walls) scene.add(walls); });
 
 const zm = new Map();
 const kills = new Map(); // zombie id -> { dir, part } of the killing blow, for the ragdoll

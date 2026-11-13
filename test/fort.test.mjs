@@ -35,6 +35,7 @@ test('the fort can be entered through the doorway (even 0.12 m off its middle), 
 test('the walls are solid for a body: walking straight at the front wall, away from the doorway, stops at it', () => {
   for (const x of [-5.5, -3, 3, 5.5]) {
     const S = place(fresh(), x, 7);
+    S.zombies.length = 0; // (the yard's screamer patrols this strip: it would shove the body along the wall)
     for (let t = 0; t < 600; t++) step(S, { mx: 0, mz: -1, aim: null }); // ten seconds straight north
     assert.ok(S.player.z > 5.9, `a body at x ${x} stops at the wall (z ${S.player.z.toFixed(2)})`);
   }
@@ -47,10 +48,33 @@ test('sight and arrows pass the windows and the doorway, and stop at the solid w
   assert.ok(los(1.4), 'the doorway');
   for (const x of [-2.5, 3, 5, -6.8]) assert.ok(!los(x), `the wall at x ${x}`);
   assert.ok(!hasLOS(L, 1, 1.6, -9, 1, 1.6, 0), 'nor through the back wall');
-  const east = (z) => hasLOS(L, 10, 1.5, z, 3, 1.4, z); // from outside the east wall (x about 6.9), in through it at z
+  const east = (z) => hasLOS(L, 9, 1.5, z, 3, 1.4, z); // from the yard east of the hall (its east wall at x about 6.9), in through it at z
   assert.ok(east(-0.4), 'the east wall\'s first window');
   assert.ok(east(3.8), 'its second window');
   assert.ok(!east(1.6), 'the east wall between them');
+});
+
+test('the fortress wall closes the yard: a body gets in only through the gate and the breach, and the way in is found from the start', () => {
+  // straight at the wall from outside, away from the gate and the breach: stopped at its outer face (south z 12, west x -12.81, east x 11.19, north z -12)
+  for (const [x0, z0, mx, mz, stopped] of [[-6, 16, 0, -1, (P) => P.z > 12], [-17, 2, 1, 0, (P) => P.x < -12.81], [15, 2, -1, 0, (P) => P.x > 11.19], [-3, -16, 0, 1, (P) => P.z < -12]]) {
+    const S = place(fresh(), x0, z0);
+    for (let t = 0; t < 600; t++) step(S, { mx, mz, aim: null });
+    assert.ok(stopped(S.player), `a body walking at the wall from (${x0}, ${z0}) stops at it (${S.player.x.toFixed(2)}, ${S.player.z.toFixed(2)})`);
+  }
+  assert.equal(walk(place(fresh(), 1.4, 16), [[1.4, 13], [1.4, 9], [1.5, 7]]), 3, 'in through the gate (south, in line with the hall\'s doorway), past its open leaves');
+  assert.equal(walk(place(fresh(), 14, -15), [[10.5, -11], [8, -8], [5, -7]]), 3, 'in through the breach (the north-east corner)');
+  const L = fresh().level, path = findPath(L, LEVEL.start.x, LEVEL.start.z, 1.5, 4);
+  assert.ok(path && Math.hypot(path.at(-1)[0] - 1.5, path.at(-1)[1] - 4) < 1, 'the planner finds the way from the start into the hall');
+});
+
+test('sight and arrows pass the gate and the breach, and not the fortress wall', () => {
+  const L = fresh().level;
+  assert.ok(hasLOS(L, 1.4, 1.6, 18, 1.4, 1.4, 8), 'through the gate');
+  assert.ok(hasLOS(L, 15, 1.6, -15, 6, 1.4, -6), 'through the breach');
+  assert.ok(!hasLOS(L, -6, 1.6, 18, -6, 1.4, 8), 'not through the south wall');
+  assert.ok(!hasLOS(L, -18, 1.6, 2, -9, 1.4, 2), 'nor the west wall');
+  assert.ok(!hasLOS(L, 17, 1.6, 2, 8.5, 1.4, 2), 'nor the east wall');
+  assert.ok(!hasLOS(L, -3, 1.6, -18, -3, 1.4, -8), 'nor the north wall');
 });
 
 test('the hall is open: a body crosses it where the scan had membranes (sheets of photogrammetry fill) and the sight crosses it too', () => {

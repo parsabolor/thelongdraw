@@ -315,3 +315,24 @@ export async function loadOutpost() {
     return scene;
   } catch (e) { if (!(e && e.response && e.response.status === 404)) console.warn(`[models] outpost.glb: ${e && e.message}`); return null; }
 }
+
+// ---------- the fortress round the outpost: level.js WALLS (Poly Haven's Modular Fort 01 and Large Castle Door, CC0; made by the engine's tools/import-fortress.py) ----------
+// Each piece's model (assets/models/game/fortress/<piece>.glb) once, a copy of it where the level stands each one. Returns the group, or null if no file is there (the walls are
+// still solid: the shell has them).
+export async function loadFortress(walls) {
+  const models = new Map();
+  await Promise.all([...new Set(walls.map((w) => w.piece))].map(async (piece) => {
+    try {
+      const { scene } = await loadAny(ASSETS + 'models/game/fortress/' + piece + '.glb');
+      scene.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+      models.set(piece, scene);
+    } catch (e) { if (!(e && e.response && e.response.status === 404)) console.warn(`[models] fortress/${piece}.glb: ${e && e.message}`); }
+  }));
+  if (!models.size) return null;
+  const group = new THREE.Group();
+  for (const w of walls) {
+    const model = models.get(w.piece); if (!model) continue;
+    const copy = model.clone(); copy.position.set(w.x, w.y, w.z); copy.rotation.y = w.yaw; group.add(copy);
+  }
+  return group;
+}

@@ -34,7 +34,9 @@ test('the world is valid: no floating boxes; start, bike, every post and patrol 
     const ground = heightAt(L, s.x, s.z), me = S.zombies.find((q) => q.role === 'scout' && q.x === s.x && q.z === s.z);
     assert.ok(ground > 4, `a scout stands high (${ground.toFixed(1)} m above the pad)`);
     assert.ok(Math.abs(me.y - (ground + TOWER.deck)) < 1e-6, 'on the deck of its tower');
-    assert.ok([[0, 10], [0, -8], [8, 0], [-8, 0]].some(([x, z]) => hasLOS(L, s.x, me.y + 1.6, s.z, x, 1.6, z)), `the scout at ${s.x}, ${s.z} sees the pad`);
+    // the yard (inside the fortress's 5 m wall, which screens it from some of them) or the fort's approaches just outside the wall
+    const watched = [[0, 10], [0, -8], [8, 0], [-8, 0], [1.4, 16], [16, 0], [0, -16], [-16, 0]];
+    assert.ok(watched.some(([x, z]) => hasLOS(L, s.x, me.y + 1.6, s.z, x, 1.6, z)), `the scout at ${s.x}, ${s.z} watches the fort`);
   }
   for (const p of LEVEL.props) for (const [name, q] of [['start', LEVEL.start], ...spots]) assert.ok(Math.hypot(p.x - q.x, p.z - q.z) > p.r + 1, `a ${p.kind} blocks ${name}`);
 });
