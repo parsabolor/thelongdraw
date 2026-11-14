@@ -267,17 +267,18 @@ export function createFigure(entry, z = null) {
 // Each is scaled so its long axis is `long` metres, and moved so the origin sits at `pivot` along that axis (min, max or
 // centre; centre on the other two) and, with `floor`, on the bottom. The orientation stays the file's own (knife and arrow
 // point along +Z): main.js turns them where they are used.
-const PROPS = {
+export const PROPS = {
   knife: { url: 'game/knife.fbx', tex: { '*': T('knife_albedo.jpg', 'knife_normal.jpg', 0.4, 0.3, 0.3) }, long: 0.5, axis: 'z', pivot: 'min' },
   arrow: { url: 'game/arrow.obj', tex: { '*': T('arrow_albedo.jpg', 'arrow_normal.jpg', 0.6, 0.1, 0.7) }, long: 0.8, axis: 'z', pivot: 'max', girth: 3 }, // a real 5 mm shaft is a hairline in play: 3x, and the fletching glows
   bike: { url: 'game/bike.glb', long: 2.1, axis: 'x', pivot: 'centre', floor: true }, // textures are embedded
-  // The scouts' lookout tower (level.js TOWER): the model is a wooden tower with a plank deck, 2.417 m long including the fence and ramp beside it (the tower frame is
+  // The scouts' lookout tower (level.js TOWER): the model is a wooden tower with a plank deck, 2.417 m long including the fence and stair beside it (the tower frame is
   // only 0.94 m square), drawn TOWER.scale times its size. `frame`: where the tower frame's middle lies in the bounding box, as fractions along x and z, so the origin
-  // is under the middle of the deck (measured on the mesh: the frame's centre is 0.741 of the way along x and 0.40 along z).
-  tower: { url: 'game/hut.fbx', tex: { '*': T('hut_albedo.jpg', 'hut_normal.jpg') }, long: 2.417 * TOWER.scale, axis: 'x', pivot: 'centre', floor: true, frame: [0.741, 0.40] },
+  // is under the middle of the deck (measured on the mesh: the frame's centre is 0.741 of the way along x and 0.40 along z). `deck`: its planks are raised to that height
+  // over its feet (raiseDeck), as the engine draws it.
+  tower: { url: 'game/hut.fbx', tex: { '*': T('hut_albedo.jpg', 'hut_normal.jpg') }, long: 2.417 * TOWER.scale, axis: 'x', pivot: 'centre', floor: true, frame: [0.741, 0.40], deck: TOWER.deck },
 };
 
-function normalise(scene, { long, axis, pivot, floor, girth = 1, frame = null }) {
+export function normalise(scene, { long, axis, pivot, floor, girth = 1, frame = null }) {
   scene.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(scene), size = box.getSize(new THREE.Vector3()), off = box.getCenter(new THREE.Vector3());
   if (pivot === 'min') off[axis] = box.min[axis]; else if (pivot === 'max') off[axis] = box.max[axis];
@@ -289,12 +290,49 @@ function normalise(scene, { long, axis, pivot, floor, girth = 1, frame = null })
   return { root, size: size.multiplyScalar(s) };
 }
 
+// The tower as the engine draws it (its scene/props.rs raise_deck): the mesh's own turn is baked into its vertices (three.js measures a turned mesh by its turned bounding box,
+// which once made the tower 0.78 times its size, its posts' feet 1.35 m over the ground), and the posts are stretched so that the planks, 2.43 m over the feet at the model's
+// scale, are `deck` m up, the hut over them moved up with them.
+const MODEL_DECK = 2.43;
+export function raiseDeck(scene, { long, deck }) {
+  scene.updateMatrixWorld(true);
+  const meshes = [];
+  scene.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  const baked = new THREE.Group();
+  for (const o of meshes) { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); baked.add(new THREE.Mesh(g, o.material)); }
+  const box = new THREE.Box3().setFromObject(baked), s = long / (box.max.x - box.min.x), floor = box.min.y, planks = floor + MODEL_DECK / s;
+  for (const m of baked.children) {
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); p.setY(i, y <= planks ? floor + (y - floor) * deck / MODEL_DECK : y + (deck - MODEL_DECK) / s); }
+    m.geometry.computeVertexNormals(); m.geometry.computeBoundingBox(); m.geometry.computeBoundingSphere();
+  }
+  return baked;
+}
+// Lets the bottom of a placed tower (its root at its base, turned) down to the ground where the ground falls below the base, as the engine draws it (scene/props.rs
+// stand_on_ground) and the rules meet its parts (sim.js letDown): every point under `foot` m over the base is lowered toward the ground under it, fully at the base.
+// Its meshes get geometry of their own.
+export function standTowerOnGround(root, base, ground, foot) {
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry = o.geometry.clone();
+    const p = o.geometry.attributes.position, w = new THREE.Vector3(), up = o.matrixWorld.elements[5]; // (metres of the world per unit of the mesh, upward: the scale has no tilt)
+    for (let i = 0; i < p.count; i++) {
+      w.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+      const y = w.y - base; if (y >= foot) continue;
+      p.setY(i, p.getY(i) - Math.max(0, base - ground(w.x, w.z)) * (1 - Math.max(y, 0) / foot) / up);
+    }
+    o.geometry.computeBoundingBox(); o.geometry.computeBoundingSphere();
+  });
+}
+
 // Loaded after the first frame (the figures are loaded before it): { knife, arrow, bike, tower } with whatever was found.
 export async function loadProps() {
   const out = {};
   await Promise.all(Object.entries(PROPS).map(async ([name, spec]) => {
     try {
-      const { scene } = await loadAny(ASSETS + 'models/' + spec.url);
+      let { scene } = await loadAny(ASSETS + 'models/' + spec.url);
+      if (spec.deck) scene = raiseDeck(scene, spec);
       retexture(scene, spec.tex);
       scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       out[name] = normalise(scene, spec);

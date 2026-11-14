@@ -118,3 +118,32 @@ test('zombies climb: a hunter that sees the player on a deck follows him up the 
   assert.ok(hunterAt(deckY(t)) > TOWER.deck - 1e-9, 'a noise on the deck: it goes up to look');
   assert.ok(hunterAt(t.base) < 0.5, 'a noise under the deck: it stays on the ground');
 });
+
+test('the browser draws the tower the rules climb: its feet on the ground, its planks at the deck\'s height, its stair and posts where the parts are', async (t) => {
+  const FBX = new URL('../assets/models/game/hut.fbx', import.meta.url);
+  if (!(await import('node:fs')).existsSync(FBX)) return t.skip('assets/models/game/hut.fbx not present');
+  globalThis.document ??= { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(v) {}, style: {} }) }; // FBXLoader builds image elements for textures
+  globalThis.location ??= { search: '' }; // (models.js reads the page's query)
+  const THREE = await import('three'), { FBXLoader } = await import('three/addons/loaders/FBXLoader.js'), { PROPS, raiseDeck, normalise, standTowerOnGround } = await import('../src/models.js');
+  const { terrainSurface } = await import('../src/level.js'), fs = await import('node:fs');
+  const buf = fs.readFileSync(FBX), warn = console.warn;
+  console.warn = () => {}; // (it warns about the textures it does not load)
+  let scene; try { scene = new FBXLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), ''); } finally { console.warn = warn; }
+  const tw = TOWERS[1], S = createState(LEVEL, 1), { root } = normalise(raiseDeck(scene, PROPS.tower), PROPS.tower);
+  root.position.set(tw.x, tw.base, tw.z); root.rotation.y = tw.yaw;
+  standTowerOnGround(root, tw.base, terrainSurface, TOWER.foot);
+  root.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), down = (u, v, from) => { const [x, z] = at(tw, u, v); ray.set(new THREE.Vector3(x, from, z), new THREE.Vector3(0, -1, 0)); return ray.intersectObject(root, true).map((h) => h.point.y - tw.base); };
+  for (const [u, v] of [[0.3, -0.5], [-0.6, 0.5], [0.6, 0.9]]) { const top = down(u, v, tw.base + 4)[0]; assert.ok(Math.abs(top - TOWER.deck) < 0.05, `the planks at (${u}, ${v}) are ${top.toFixed(3)} m over the base`); }
+  for (const u of [-4.64, -3.79, -2.95, -2.1]) { // the treads' middles, where the rules' ramp runs through them
+    const [x, z] = at(tw, u, 0.12), rule = floorAt(S.level, x, z, 1e9) - tw.base, drawn = down(u, 0.12, tw.base + 3.3)[0];
+    assert.ok(Math.abs(drawn - rule) < 0.2, `the tread at u ${u} is drawn at ${drawn.toFixed(2)} m, the ramp there ${rule.toFixed(2)} m`);
+  }
+  let foot = Infinity; // the bottom of the +u +v post, where the ground is level
+  root.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position, w = new THREE.Vector3(); for (let i = 0; i < p.count; i++) { w.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); const [u, v] = frame(tw, w.x, w.z); if (u > 1.12 && u < 1.43 && v > 1.11 && v < 1.42) foot = Math.min(foot, w.y - tw.base); } });
+  assert.ok(Math.abs(foot) < 0.03, `its post stands on the ground (its foot ${foot.toFixed(3)} m over the base)`);
+  const [px, pz] = at(tw, 1.28, 3); // across toward the +v post 2.5 m up (over the strut leaning on it): it is met where the parts have it (v 1.11 to 1.42)
+  ray.set(new THREE.Vector3(px, tw.base + 2.5, pz), new THREE.Vector3(-tw.s, 0, -tw.c));
+  const post = 3 - ray.intersectObject(root, true)[0].distance;
+  assert.ok(post < 1.45 && post > 1.38, `the post's face at v ${post.toFixed(2)}`);
+});
