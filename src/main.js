@@ -373,7 +373,7 @@ function reset() {
 const TAG_TIME = 1; // seconds a zombie must stay anywhere inside the binocular viewfinder (either lens, in line of sight) to be tagged
 const tagTimers = new Map(), tagView = []; // zombie id -> seconds in view; this frame's zombies in view: { z, t, px, py } (px, py: where they are on screen)
 const lens = (w, h) => { const r = Math.min(h * 0.42, w * 0.25); return { r, gap: r * 0.55 }; }; // the two binocular lenses: radius and half the distance between their centres
-const HELP = 'WASD move   Shift run   C crouch   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up an arrow, or bail at the bike\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
+const HELP = 'WASD move   Shift run   C crouch on/off   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up an arrow, or bail at the bike, or cancel a draw\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
 const showScreen = (html) => { $('screenbody').innerHTML = html; $('screen').classList.remove('hidden'); };
 const hideScreen = () => $('screen').classList.add('hidden');
 let toastTimer = 0;
@@ -451,7 +451,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyB') { if (P.drawing) cancelPending = true; aimHeld = false; mode = mode === 'bino' ? 'walk' : 'bino'; tagTimers.clear(); }
   else if (e.code === 'Digit1' && !P.drawing) P.kind = 'basic';
   else if (e.code === 'Digit2' && !P.drawing) P.kind = 'lure';
-  else if (e.code === 'KeyE') { if (!sim.retrieve(S) && !sim.bail(S)) toast('Nothing in reach'); }
+  else if (e.code === 'KeyE') { if (P.drawing) cancelPending = true; else if (!sim.retrieve(S) && !sim.bail(S)) toast('Nothing in reach'); } // (drawing: the draw is let down, as letting go of the right mouse does)
   else if (e.code === 'KeyF') sim.knife(S); // the 'knife' event does the toast, the swing and the sound
 });
 addEventListener('blur', () => { keys.clear(); mouseDown = false; });

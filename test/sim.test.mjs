@@ -548,3 +548,13 @@ test('box modes: a sight box blocks rays but not bodies, a body box blocks bodie
   assert.throws(() => buildLevel(open([], [{ x0: 0, x1: 1, z0: 0, z1: 1, y0: 1, y1: 2, tag: 'wood' }])), /floats/, 'a plain box still may not float');
   assert.doesNotThrow(() => buildLevel(open([], [{ x0: 0, x1: 1, z0: 0, z1: 0.1, y0: 1, y1: 2, tag: 'wood', mode: 'sight' }])), 'a sight box may hang in the air (a window frame)');
 });
+
+test('a cancel lets a draw down: nothing is loosed and the arrow stays in the quiver (the right mouse, B and E all cancel this way)', () => {
+  const S = createState(open([guard]), 1), P = S.player, aim = [0, 0, -1], quiver = P.quiver.basic;
+  run(S, 1.5, { ...idle, aim, draw: true });
+  assert.ok(P.drawing, 'drawn');
+  step(S, { ...idle, aim, cancel: true });
+  run(S, 0.5, { ...idle, aim }); // the button let go after the cancel
+  assert.ok(!P.drawing && P.drawT === 0, 'let down');
+  assert.deepEqual([S.stats.shots, S.arrows.length, P.quiver.basic], [0, 0, quiver], 'nothing loosed, the arrow kept');
+});
