@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVEL, TOWER, TOWERS, terrainHeight } from '../src/level.js';
-import { createState, step, findPath, hasLOS, heightAt, seesZombie, tagById } from '../src/sim.js';
+import { PARTS, createState, step, findPath, hasLOS, heightAt, terrainAt, hitScale, seesZombie, sightPoints, tagById, tagZombie } from '../src/sim.js';
 
 const fresh = () => createState(LEVEL, 1);
 // Walks the player through the waypoints with plain movement input (so the real collision applies); returns how many were reached.
@@ -18,6 +18,8 @@ function walk(S, pts, secs = 40) {
   return i;
 }
 const place = (S, x, z) => { Object.assign(S.player, { x, z, y: heightAt(S.level, x, z), hp: 1e9 }); return S; };
+// The zombies out of the way (asleep, far off): a hit shoves the body, and with none left alive the game is over and nothing moves.
+const alone = (S) => { for (const q of S.zombies) { q.x += 1000; q.state = 'dormant'; } return S; };
 
 test('the fort can be entered through the doorway (even 0.12 m off its middle), and not through the back wall', () => {
   for (const x0 of [1.38, 1.5, 1.62]) {
@@ -25,7 +27,7 @@ test('the fort can be entered through the doorway (even 0.12 m off its middle), 
     assert.equal(walk(S, [[x0, 7], [1.5, 5.6], [1.5, 4], [1.5, 2.2], [0.5, 0.8], [0, -1]]), 6, `a body at x ${x0} gets through the door and the porch into the hall`);
     assert.ok(S.player.z < 0, 'and is inside');
   }
-  const back = place(fresh(), 1, -9);
+  const back = alone(place(fresh(), 1, -9));
   assert.ok(walk(back, [[1, -6.5], [1, -3], [1, 0]], 10) < 3, 'the back wall (once missing from the shell: it is in the scan\'s second material) stops a body');
   assert.ok(back.player.z < -5, `and it stays outside (z ${back.player.z.toFixed(2)})`);
   const path = findPath(fresh().level, 1.5, 9, 0, -1);
@@ -34,8 +36,7 @@ test('the fort can be entered through the doorway (even 0.12 m off its middle), 
 
 test('the walls are solid for a body: walking straight at the front wall, away from the doorway, stops at it', () => {
   for (const x of [-5.5, -3, 3, 5.5]) {
-    const S = place(fresh(), x, 7);
-    S.zombies.length = 0; // (the yard's screamer patrols this strip: it would shove the body along the wall)
+    const S = alone(place(fresh(), x, 7)); // (the yard's screamer patrols this strip: it would shove the body along the wall)
     for (let t = 0; t < 600; t++) step(S, { mx: 0, mz: -1, aim: null }); // ten seconds straight north
     assert.ok(S.player.z > 5.9, `a body at x ${x} stops at the wall (z ${S.player.z.toFixed(2)})`);
   }
@@ -95,6 +96,22 @@ test('the binoculars see a zombie inside through a window or the doorway, not th
   Object.assign(z, { x: 1.4, z: 3 });
   assert.ok(seesZombie(S, eye(1.4), z), 'through the doorway');
   assert.ok(tagById(S, z.id), 'tagged');
+});
+
+test('the binoculars see what an arrow could hit: a sleeper whose middle is behind the window frame but whose edge shows in it, and every point they see by is one an arrow reaches', () => {
+  const S = fresh(), L = S.level, z = S.zombies.find((q) => q.role === 'sleeper' && q.x === -4 && q.z === 3), o = [-7.5, 1.6, 6.7]; // from the yard, at a slant through the left window
+  for (const q of S.zombies) if (q !== z) q.x += 1000; // nothing else in the way of an arrow
+  assert.ok(!PARTS.some(([, hy]) => hasLOS(L, ...o, z.x, z.y + hy * hitScale(z), z.z)), 'the line to the middle of each part is behind the frame');
+  assert.ok(seesZombie(S, o, z), 'but its edge is in the window: seen');
+  // over the yard: wherever a point the binoculars look for is in sight, an arrow aimed at it (tagZombie: the arrow's own test, its hit spheres and the world in the way) reaches this zombie
+  let seen = 0;
+  for (let px = -8; px <= 8; px += 1) for (let pz = 6.5; pz <= 11.5; pz += 1) {
+    const e = [px, terrainAt(L, px, pz) + 1.6, pz], clear = sightPoints(e, z).filter((p) => hasLOS(L, ...e, ...p));
+    if (clear.length) seen++;
+    for (const p of clear) { const d = p.map((v, i) => v - e[i]), n = Math.hypot(...d); assert.equal(tagZombie(S, e, d.map((v) => v / n), 200, false), z.id, `from ${e}, toward ${p}`); }
+  }
+  assert.ok(seen >= 10, `seen from ${seen} spots in the yard`);
+  assert.ok(!seesZombie(S, [-2.5, 1.6, 9], { ...z, x: -2.5, z: 3 }), 'still not through the wall');
 });
 
 test('the scouts stand on the decks of their towers, on level ground, and stay there', () => {

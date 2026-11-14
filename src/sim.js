@@ -26,7 +26,10 @@ export const TUNING = {
     // scout: stands on a vantage point, sees far (and down from up there: vert is how far above or below itself it can see, 4 m for the rest)
     // and, the moment it is sure it sees the player, tells every awake zombie where they are (scoutCall); see alertEnter and the alert case of stepZombie
     // gain: how fast its sight fills the awareness meter, against 1 for the others (it sees far, but it takes a moment to be sure)
-    scout: { sight: 40, fov: 80, hear: 1.6, patrol: false, vert: 40, gain: 0.6 },
+    // sightPerRootM: its sight reaches this many metres further for every square root of a metre it stands above the player (sightRange): the higher it is, the further it sees,
+    // as a horizon widens (4.5: a scout 9 m up sees 53 m, 28 m up 64 m, 39 m up 68 m; a range growing with the height itself had the plateau's scout see the start).
+    // vert is more than the deepest drop under a tower (the plateau's deck is 40 m over the valley's low corner)
+    scout: { sight: 40, fov: 80, hear: 1.6, patrol: false, vert: 60, gain: 0.6, sightPerRootM: 4.5 },
     sleeper: { sight: 0, fov: 0, hear: 0.6, patrol: true, wake: 0.5 },
     screamer: { sight: 22, fov: 110, hear: 1, patrol: true },
     // armored: sees and hears as a hunter. hold: he walks his own fixed route (the level's spawn gives it, with the way he faces at each stop in `face`), stands `hold` seconds at
@@ -694,6 +697,10 @@ function attack(S, z) {
   S.events.push({ type: 'hit', id: z.id });
 }
 
+// How far a zombie of role `rp` standing at height `zy` sees a player standing at `py` (before crouching): its sight, and for one that has `sightPerRootM` (the scout) that much more
+// for every square root of a metre it stands above the player. The minimap's sight cone is this too.
+export const sightRange = (rp, zy, py) => rp.sight + (rp.sightPerRootM || 0) * Math.sqrt(Math.max(0, zy - py));
+
 function stepZombie(S, z, dt) {
   const T = TUNING, Z = T.zombie, A = T.aware, P = S.player, rp = T.roles[z.role];
   z.repath -= dt; z.atk -= dt;
@@ -701,7 +708,7 @@ function stepZombie(S, z, dt) {
   // sight
   let sees = false;
   if (rp.sight > 0 && z.state !== 'dormant') {
-    const dx = P.x - z.x, dz = P.z - z.z, d = hyp(dx, dz), range = rp.sight * (P.crouch ? 0.7 : 1);
+    const dx = P.x - z.x, dz = P.z - z.z, d = hyp(dx, dz), range = sightRange(rp, z.y, P.y) * (P.crouch ? 0.7 : 1);
     if (d < range && Math.abs(P.y - z.y) < (rp.vert || 4)) {
       const cos = (Math.sin(z.yaw) * dx + Math.cos(z.yaw) * dz) / (d || 1);
       if (cos > Math.cos((rp.fov * Math.PI) / 360) && hasLOS(S.level, z.x, z.y + 1.6, z.z, P.x, eyeY(P), P.z)) {
@@ -994,17 +1001,47 @@ export function tagZombie(S, o, dir, range = 80, commit = true) {
   return best.id; // with commit = false this only reports what is under the crosshair
 }
 
-// Binoculars: does the point `o` see this living zombie's head, chest or hips through nothing solid? (Whether it is inside the viewfinder is the renderer's call.)
-export function seesZombie(S, o, z) {
-  if (z.state === 'dead') return false;
-  const k = hitScale(z);
-  return PARTS.some(([, hy]) => hasLOS(S.level, o[0], o[1], o[2], z.x, z.y + hy * k, z.z));
+// Binoculars: does the point `o` see this living zombie's head, chest or hips through nothing solid? A part is seen if the line to its middle, or to one of eight points round
+// its outline as seen from `o` (its hit sphere's radius out from the middle, across the line of sight), is clear: each of those lines passes within the radius of the middle, so
+// what the binoculars see an arrow could hit (a zombie whose middle is behind a window's frame and whose edge shows in the window is seen; an arrow also drops, so the two can
+// never agree exactly). (Whether it is inside the viewfinder is the renderer's call.)
+const OUTLINE = [[1, 0], [-1, 0], [0, 1], [0, -1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, -Math.SQRT1_2]];
+// The points of a zombie the binoculars look for from `o`: for its head, chest and hips in turn, the middle and then the eight round its outline.
+export function sightPoints(o, z) {
+  const k = hitScale(z), pts = [];
+  for (const [, hy, r] of PARTS) {
+    const cx = z.x, cy = z.y + hy * k, cz = z.z;
+    pts.push([cx, cy, cz]);
+    const dx = cx - o[0], dy = cy - o[1], dz = cz - o[2], h = Math.hypot(dx, dz), R = r * k;
+    const sx = h > 1e-6 ? dz / h : 1, sz = h > 1e-6 ? -dx / h : 0; // across the line of sight, level (looking straight down, along x)
+    let ux = -sz * dy, uy = sz * dx - sx * dz, uz = sx * dy; // across both: the side crossed with the line of sight
+    const u = Math.hypot(ux, uy, uz);
+    ux /= u; uy /= u; uz /= u;
+    for (const [a, b] of OUTLINE) pts.push([cx + (sx * a + ux * b) * R, cy + uy * b * R, cz + (sz * a + uz * b) * R]);
+  }
+  return pts;
 }
+export const seesZombie = (S, o, z) => z.state !== 'dead' && sightPoints(o, z).some((p) => hasLOS(S.level, o[0], o[1], o[2], p[0], p[1], p[2]));
 // Tag one zombie by id (the binoculars do this once it has stayed in the viewfinder long enough). Returns true if it was newly tagged.
 export function tagById(S, id) {
   const z = S.zombies.find((q) => q.id === id);
   if (!z || z.state === 'dead' || z.tagged) return false;
   z.tagged = true; S.events.push({ type: 'tag', id });
+  return true;
+}
+
+// A pack of arrows in the hall beside the bike's battery (the engine's objective, game::sim::objective, which keeps the same place and count: the browser game has no battery):
+// picked up once with E, before any arrow in reach. Not part of the state or of `step` (main.js holds it, as the engine holds the battery), so the traces never see it.
+export const PACK = { x: -3.8, z: -2, arrows: 5 };
+export const createPack = (L) => ({ x: PACK.x, y: heightAt(L, PACK.x, PACK.z), z: PACK.z, taken: false });
+export const packInReach = (S, pack) => !!pack && !pack.taken && !S.over && hyp(pack.x - S.player.x, pack.z - S.player.z) < TUNING.bow.reach && Math.abs(pack.y - S.player.y) < 3;
+// Takes the pack if it is in reach: its arrows go into the quiver (past the 10 the player starts with: there is no limit), with a rummage as for an arrow. Whether it did.
+export function takePack(S, pack) {
+  if (!packInReach(S, pack)) return false;
+  pack.taken = true;
+  S.player.quiver.basic += PACK.arrows;
+  playerNoise(S, TUNING.loud.rummage, 'rummage');
+  S.events.push({ type: 'pack', n: PACK.arrows });
   return true;
 }
 

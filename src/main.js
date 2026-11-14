@@ -100,6 +100,7 @@ withFx('motes', (f) => scene.add((motes = f.createMotes({ reducedMotion })))); /
 
 // ---------- terrain, road, level boxes, props ----------
 let S = sim.createState(LEVEL, 1);
+let pack = sim.createPack(S.level); // the pack of arrows in the hall (sim.PACK): outside the state, as the engine's battery is
 
 // The terrain: the baked world (src/level.js terrainGrid): a smooth surface subdivided to 0.25 m cells within 60 m of the middle, the plain 1 m grid out to
 // 140 m (beyond the sim's own bounds the ground mirrors itself), textured with the supplied scan's colour and normal maps.
@@ -301,6 +302,7 @@ const headGeo = new THREE.ConeGeometry(0.03, 0.1, 8); headGeo.translate(0, -0.05
 const arrowMat = { basic: new THREE.MeshStandardMaterial({ color: 0xd9c8a0 }), lure: new THREE.MeshStandardMaterial({ color: 0xe8d36a }) };
 const headMat = new THREE.MeshStandardMaterial({ color: 0x555a5e });
 const am = new Map(), tmpDir = new THREE.Vector3();
+let packMesh = null; // the pack of arrows (syncMeshes)
 const EMBED = 0.1; // metres of shaft buried in a body: the sim's hit point is on its hit sphere, not on the mesh
 
 // An arrow mesh has its tip at the origin and its shaft trailing along -Y. The loaded arrow model (props.arrow, which points
@@ -360,6 +362,7 @@ function reset() {
   if (audio) audio.stopAll();
   for (const m of zm.values()) scene.remove(m.fig.root);
   zm.clear(); kills.clear();
+  pack = sim.createPack(S.level);
   for (const m of am.values()) m.removeFromParent();
   am.clear();
   for (const r of rings) { r.live = false; r.m.visible = false; }
@@ -374,7 +377,7 @@ function reset() {
 const TAG_TIME = 1; // seconds a zombie must stay anywhere inside the binocular viewfinder (either lens, in line of sight) to be tagged
 const tagTimers = new Map(), tagView = []; // zombie id -> seconds in view; this frame's zombies in view: { z, t, px, py } (px, py: where they are on screen)
 const lens = (w, h) => { const r = Math.min(h * 0.42, w * 0.25); return { r, gap: r * 0.55 }; }; // the two binocular lenses: radius and half the distance between their centres
-const HELP = 'WASD move   Shift run   Space jump   C crouch on/off   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up an arrow, or bail at the bike, or cancel a draw\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
+const HELP = 'WASD move   Shift run   Space jump   C crouch on/off   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up arrows (a pack of 5 lies in the hall), or bail at the bike, or cancel a draw\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
 const showScreen = (html) => { $('screenbody').innerHTML = html; $('screen').classList.remove('hidden'); };
 const hideScreen = () => $('screen').classList.add('hidden');
 let toastTimer = 0;
@@ -452,7 +455,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyB') { if (P.drawing) cancelPending = true; aimHeld = false; mode = mode === 'bino' ? 'walk' : 'bino'; tagTimers.clear(); }
   else if (e.code === 'Digit1' && !P.drawing) P.kind = 'basic';
   else if (e.code === 'Digit2' && !P.drawing) P.kind = 'lure';
-  else if (e.code === 'KeyE') { if (P.drawing) cancelPending = true; else if (!sim.retrieve(S) && !sim.bail(S)) toast('Nothing in reach'); } // (drawing: the draw is let down, as letting go of the right mouse does)
+  else if (e.code === 'KeyE') { if (P.drawing) cancelPending = true; else if (!sim.takePack(S, pack) && !sim.retrieve(S) && !sim.bail(S)) toast('Nothing in reach'); } // (drawing: the draw is let down, as letting go of the right mouse does)
   else if (e.code === 'KeyF') sim.knife(S); // the 'knife' event does the toast, the swing and the sound
 });
 addEventListener('blur', () => { keys.clear(); mouseDown = false; });
@@ -545,6 +548,7 @@ function consumeEvents() {
     else if (e.type === 'wound') { toast(rang ? 'It rang off his vest: go for the head' : 'Wounded: it screams'); rang = false; }
     else if (e.type === 'blown') toast('Blown: they are coming');
     else if (e.type === 'tag') toast('Tagged');
+    else if (e.type === 'pack') toast(`+${e.n} arrows`);
     else if (e.type === 'wake') toast('Something woke up');
     else if (e.type === 'hit') { hurtT = 1; shakeT = 1; const m = zm.get(e.id); if (m) m.attackUntil = S.t + 0.6; }
     else if (e.type === 'swarmed') toast('Swarmed');
@@ -600,6 +604,17 @@ function syncMeshes(dt) {
     m.ind.visible = z.tagged && z.state !== 'dead';
     if (m.ind.visible) { m.ind.material.color.setHex(STATE_COLOR[z.state] ?? 0x9aa5ad); m.ind.rotation.y = S.t * 2; }
   }
+
+  // the pack of arrows: five lying side by side on the floor until it is taken (made again with the loaded arrow model once that has arrived)
+  if (!packMesh || (packMesh.userData.plain && props.arrow)) {
+    if (packMesh) scene.remove(packMesh);
+    packMesh = new THREE.Group(); packMesh.userData.plain = !props.arrow;
+    for (let i = 0; i < sim.PACK.arrows; i++) {
+      const m = makeArrow('basic'); m.quaternion.setFromUnitVectors(UP, new THREE.Vector3(1, 0, 0)); m.position.set(0.35, 0.02, (i - 2) * 0.03); packMesh.add(m);
+    }
+    scene.add(packMesh);
+  }
+  packMesh.visible = !pack.taken; packMesh.position.set(pack.x, pack.y, pack.z);
 
   const seen = new Set();
   for (const a of S.arrows) {
@@ -742,6 +757,7 @@ function drawMini() {
     c.beginPath(); c.arc(r.x, r.z, rad, 0, Math.PI * 2); c.stroke();
   }
   c.fillStyle = '#6fbf73'; c.fillRect(LEVEL.bike.x - 1, LEVEL.bike.z - 1, 2, 2);
+  if (!pack.taken) { c.fillStyle = '#d9c8a0'; c.fillRect(pack.x - 0.8, pack.z - 0.8, 1.6, 1.6); } // the pack of arrows (an item: a plain marker)
   c.fillStyle = S.bell.ring ? '#f2c14e' : '#8a7a2a'; c.beginPath(); c.arc(LEVEL.bell.x, LEVEL.bell.z, 1.4, 0, Math.PI * 2); c.fill();
   for (const z of S.zombies) {
     if (z.state === 'dead') continue;
@@ -750,7 +766,7 @@ function drawMini() {
     const css = '#' + (STATE_COLOR[z.state] ?? 0x9aa5ad).toString(16).padStart(6, '0');
     if (z.tagged || debugAI) {
       const rp = TUNING.roles[z.role], a = Math.PI / 2 - z.yaw, half = (rp.fov * Math.PI) / 360;
-      if (rp.sight > 0 && z.state !== 'dormant') { c.fillStyle = css + '33'; c.beginPath(); c.moveTo(z.x, z.z); c.arc(z.x, z.z, rp.sight, a - half, a + half); c.closePath(); c.fill(); }
+      if (rp.sight > 0 && z.state !== 'dormant') { c.fillStyle = css + '33'; c.beginPath(); c.moveTo(z.x, z.z); c.arc(z.x, z.z, sim.sightRange(rp, z.y, S.player.y), a - half, a + half); c.closePath(); c.fill(); }
       const spot = z.state === 'search' ? z.searchC || z.lkp : z.state === 'alert' ? z.lkp : null; // where it last saw the player, or the middle of the area it is searching
       if (spot) {
         c.strokeStyle = css; c.lineWidth = 0.5; c.beginPath();

@@ -5,7 +5,7 @@
 //   node tools/geometry-fixtures.mjs [file]     writes the fixtures (default sim-data/geometry.json)
 //
 // Format (longdraw-geometry-fixtures/1): {rays: [{a, b, skip, hit: null | {t, tag, kind}}], spheres: [{a, b, c, r, t}], paths: [{from, to, path: null | [[x, z]...]}], hypots: [{v: [2 or 3 numbers], h}],
-// floors: [{p: [x, y, z], floor}], bodies: [{p: [x, y, z], r, fits}]} (the tower rays and paths are among the others). Numbers are exact (JSON keeps a double whole); the points come from a fixed generator, so the file is the same every time.
+// floors: [{p: [x, y, z], floor}], bodies: [{p: [x, y, z], r, fits}], sees: [{o, zombie: {x, y, z, state}, points, seen}]} (the tower rays and paths are among the others). Numbers are exact (JSON keeps a double whole); the points come from a fixed generator, so the file is the same every time.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,7 +64,13 @@ export function geometryFixtures() {
     const k = i % 3 === 0 ? 1 : i % 3 === 1 ? 40 : 0.01, v = Array.from({ length: i % 2 ? 3 : 2 }, () => between(-k, k));
     hypots.push({ v, h: Math.hypot(...v) });
   }
-  return { format: FIXTURE_FORMAT, level: 'outpost', rays, spheres, paths, hypots, floors, bodies };
+  // the binoculars round the fort (seesZombie): an eye and a zombie, standing or asleep, the points looked for (sightPoints) and whether it is seen
+  const sees = [];
+  for (let i = 0; i < 400; i++) {
+    const o = spot(16), [x, , z] = spot(12), g = heightAt(L, x, z), zombie = { x, y: Number.isFinite(g) ? g : 0, z, state: i % 3 === 0 ? 'dormant' : 'idle' };
+    sees.push({ o, zombie, points: sim.sightPoints(o, zombie), seen: sim.seesZombie(S, o, zombie) });
+  }
+  return { format: FIXTURE_FORMAT, level: 'outpost', rays, spheres, paths, hypots, floors, bodies, sees };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -72,5 +78,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync(dirname(file), { recursive: true });
   const f = geometryFixtures();
   writeFileSync(file, JSON.stringify(f));
-  console.log(`${file}: ${f.rays.length} rays (${f.rays.filter((r) => r.hit).length} hit something), ${f.spheres.length} spheres, ${f.paths.length} paths (${f.paths.filter((p) => p.path).length} found), ${f.hypots.length} hypots`);
+  console.log(`${file}: ${f.rays.length} rays (${f.rays.filter((r) => r.hit).length} hit something), ${f.spheres.length} spheres, ${f.paths.length} paths (${f.paths.filter((p) => p.path).length} found), ${f.hypots.length} hypots, ${f.sees.length} binocular sightings (${f.sees.filter((q) => q.seen).length} seen)`);
 }

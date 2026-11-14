@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVEL, TOWER } from '../src/level.js';
-import { TUNING, createState, buildLevel, step, emitNoise, fireArrow, retrieve, knife, knifeTarget, windAt, findPath, heightAt, openAt, hasLOS, dropAngle, PIN_RANGES, seesZombie, tagById } from '../src/sim.js';
+import { TUNING, createState, buildLevel, step, emitNoise, fireArrow, retrieve, knife, knifeTarget, windAt, findPath, heightAt, openAt, hasLOS, dropAngle, PIN_RANGES, seesZombie, tagById, sightRange, PACK, createPack, packInReach, takePack } from '../src/sim.js';
 
 const idle = { mx: 0, mz: 0, aim: null };
 const open = (spawns, boxes = [], terrain = null) => ({
@@ -580,4 +580,30 @@ test('a cancel lets a draw down: nothing is loosed and the arrow stays in the qu
   run(S, 0.5, { ...idle, aim }); // the button let go after the cancel
   assert.ok(!P.drawing && P.drawT === 0, 'let down');
   assert.deepEqual([S.stats.shots, S.arrows.length, P.quiver.basic], [0, 0, quiver], 'nothing loosed, the arrow kept');
+});
+
+test('a scout sees further the higher it stands over the player (4.5 m for every square root of a metre), crouching still shortens it, and the others see as before', () => {
+  const sees = (y, crouch = false) => {
+    const S = createState(open([{ role: 'scout', x: 0, z: -15, y, yaw: 0 }, guard]), 1); // 45 m from the start (z 30), looking at it
+    step(S, { ...idle, crouch });
+    return S.zombies[0].sees;
+  };
+  assert.ok(!sees(0), 'level with the player: 40 m, not 45');
+  assert.ok(sees(4), '4 m up: 49 m');
+  assert.ok(!sees(4, true), 'and a crouching player is seen at 0.7 of that: 34 m');
+  assert.ok(Math.abs(sightRange(TUNING.roles.scout, 28.35, 0) - 63.96) < 0.01, 'the plateau\'s scout over the pad: 64 m');
+  assert.equal(sightRange(TUNING.roles.scout, 3, 10), 40, 'below the player: no more than its sight');
+  assert.equal(sightRange(TUNING.roles.hunter, 20, 0), TUNING.roles.hunter.sight, 'a hunter on a roof sees as far as on the ground');
+});
+
+test('the pack of arrows in the hall: E takes it once when it is in reach, five arrows past the start count, with a rummage', () => {
+  const S = createState(LEVEL, 1), pack = createPack(S.level), P = S.player, before = P.quiver.basic;
+  assert.ok(!packInReach(S, pack) && !takePack(S, pack), 'not from the start');
+  Object.assign(P, { x: PACK.x + 1.5, z: PACK.z, y: pack.y });
+  assert.ok(takePack(S, pack), 'within reach');
+  assert.equal(P.quiver.basic, before + 5);
+  assert.ok(S.events.some((e) => e.type === 'pack' && e.n === 5) && S.events.some((e) => e.type === 'noise' && e.kind === 'rummage'));
+  assert.ok(pack.taken && !takePack(S, pack), 'once');
+  assert.equal(P.quiver.basic, before + 5);
+  assert.ok(findPath(S.level, LEVEL.start.x, LEVEL.start.z, PACK.x, PACK.z), 'it can be walked to from the start');
 });
