@@ -921,17 +921,22 @@ function stepArrows(S, dt) {
 
 // ---------- player actions ----------
 
+// Where an arrow can be picked up from, if it can: a stuck one where it is stuck; one stuck in a zombie only once the zombie is dead, where the zombie fell (not where it was hit).
+// null while it flies or is in a living zombie. (The minimap shows these.)
+export function lyingAt(S, a) {
+  if (a.state !== 'stuck') return null;
+  const h = a.zid ? S.zombies.find((q) => q.id === a.zid) : null;
+  if (h && h.state !== 'dead') return null;
+  return h ? { x: h.x, y: h.y, z: h.z } : { x: a.x, y: a.y, z: a.z };
+}
+
 export function retrieve(S) {
   const P = S.player;
   let best = -1, bd = TUNING.bow.reach;
   S.arrows.forEach((a, i) => {
-    if (a.state !== 'stuck') return;
-    let x = a.x, y = a.y, z = a.z;
-    if (a.zid) { // stuck in a zombie: out of reach while it lives, and it lies where it fell (not where it was hit) once dead
-      const h = S.zombies.find((q) => q.id === a.zid);
-      if (h && h.state !== 'dead') return;
-      if (h) { x = h.x; y = h.y; z = h.z; }
-    }
+    const at = lyingAt(S, a);
+    if (!at) return;
+    const { x, y, z } = at;
     const d = hyp(x - P.x, z - P.z);
     if (d < bd && Math.abs(y - P.y) < 3) { bd = d; best = i; }
   });

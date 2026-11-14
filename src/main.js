@@ -12,6 +12,7 @@ import { createTrees } from './trees.js';
 import { SWING_TIME } from './survivor.js';
 import { attachHeld } from './held.js';
 import { detailMaterial } from './detail.js';
+import { MAP_ICONS, zombieIcon } from './mapicons.js';
 
 const { TUNING } = sim;
 const $ = (id) => document.getElementById(id);
@@ -736,6 +737,25 @@ shade.width = shade.height = 320;
 }
 const mctx = $('mini').getContext('2d');
 const MS = 4, MW = 480; // minimap canvas pixels per metre; canvas size (shows 120 m, so a full-volume noise fits)
+// The minimap's icons (src/mapicons.js), one pixel of the picture to one of the canvas. A cell is tinted (its white takes the colour, its dark edge stays dark) into a canvas of its own
+// the first time it is drawn in that colour, once the picture has loaded (before that, or if it is broken, nothing is drawn and nothing blank is kept).
+const iconAtlas = new Image();
+iconAtlas.src = './assets/ui/map-icons.png';
+const tintedIcons = new Map();
+function mapIcon(name, x, z, css, turn = 0) {
+  if (!iconAtlas.complete || !iconAtlas.naturalWidth) return;
+  const s = iconAtlas.naturalHeight, key = name + css;
+  let t = tintedIcons.get(key);
+  if (!t) {
+    const k = MAP_ICONS.indexOf(name), g = (t = document.createElement('canvas')).getContext('2d');
+    t.width = t.height = s;
+    g.drawImage(iconAtlas, k * s, 0, s, s, 0, 0, s, s);
+    g.globalCompositeOperation = 'multiply'; g.fillStyle = css; g.fillRect(0, 0, s, s);
+    g.globalCompositeOperation = 'destination-in'; g.drawImage(iconAtlas, k * s, 0, s, s, 0, 0, s, s);
+    tintedIcons.set(key, t);
+  }
+  mctx.save(); mctx.translate(x, z); mctx.rotate(turn); mctx.drawImage(t, -s / MS / 2, -s / MS / 2, s / MS, s / MS); mctx.restore();
+}
 function drawMini() {
   const P = S.player, c = mctx;
   c.clearRect(0, 0, MW, MW);
@@ -756,9 +776,10 @@ function drawMini() {
     c.strokeStyle = `rgba(${RING_CSS[r.src] ?? '255,255,255'},${0.8 * (1 - age / 1.6)})`;
     c.beginPath(); c.arc(r.x, r.z, rad, 0, Math.PI * 2); c.stroke();
   }
-  c.fillStyle = '#6fbf73'; c.fillRect(LEVEL.bike.x - 1, LEVEL.bike.z - 1, 2, 2);
-  if (!pack.taken) { c.fillStyle = '#d9c8a0'; c.fillRect(pack.x - 0.8, pack.z - 0.8, 1.6, 1.6); } // the pack of arrows (an item: a plain marker)
   c.fillStyle = S.bell.ring ? '#f2c14e' : '#8a7a2a'; c.beginPath(); c.arc(LEVEL.bell.x, LEVEL.bell.z, 1.4, 0, Math.PI * 2); c.fill();
+  mapIcon('bike', LEVEL.bike.x, LEVEL.bike.z, '#6fbf73');
+  for (const a of S.arrows) { const at = sim.lyingAt(S, a); if (at) mapIcon('arrow', at.x, at.z, '#e8ecef'); } // the arrows that can be picked up
+  if (!pack.taken) mapIcon('arrows', pack.x, pack.z, '#e8ecef'); // the pack of arrows in the hall
   for (const z of S.zombies) {
     if (z.state === 'dead') continue;
     const heard = S.t - z.heardT < 2.5;
@@ -774,16 +795,9 @@ function drawMini() {
         if (z.state === 'search') { c.beginPath(); c.arc(spot.x, spot.z, TUNING.zombie.searchRadius, 0, Math.PI * 2); c.stroke(); } // the 20 m search area
       }
     }
-    c.fillStyle = z.tagged || debugAI ? css : '#ffffff';
-    if (z.kind === 'armored') c.fillRect(z.x - 1.3, z.z - 1.3, 2.6, 2.6); // the armored zombie a square, the others a round dot
-    else { c.beginPath(); c.arc(z.x, z.z, 1.3, 0, Math.PI * 2); c.fill(); }
+    mapIcon(zombieIcon(z), z.x, z.z, z.tagged || debugAI ? css : '#ffffff');
   }
-  const a = Math.PI / 2 - view.yaw;
-  c.fillStyle = '#e8ecef'; c.beginPath();
-  c.moveTo(P.x + Math.cos(a) * 2.6, P.z + Math.sin(a) * 2.6);
-  c.lineTo(P.x + Math.cos(a + 2.5) * 1.8, P.z + Math.sin(a + 2.5) * 1.8);
-  c.lineTo(P.x + Math.cos(a - 2.5) * 1.8, P.z + Math.sin(a - 2.5) * 1.8);
-  c.closePath(); c.fill();
+  mapIcon('player', P.x, P.z, '#56b4e9', Math.PI - view.yaw); // the pointer turned the way you look (yaw 0 looks along +Z, down the map)
   c.restore();
 }
 let fps = 0, fpsN = 0, fpsT = 0;
