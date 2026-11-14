@@ -119,6 +119,33 @@ test('zombies climb: a hunter that sees the player on a deck follows him up the 
   assert.ok(hunterAt(t.base) < 0.5, 'a noise under the deck: it stays on the ground');
 });
 
+test('a jump over the rail of the deck on the fort side drops the player to the ground below: a way off the tower other than the stair', () => {
+  const t = TOWERS[0], S = on(t, 0, 0.6, deckY(t));
+  let over = false;
+  for (let i = 0; i < 120; i++) { step(S, { mx: t.s, mz: t.c, aim: null, jump: true }); over ||= frame(t, S.player.x, S.player.z)[1] > 1.4; } // (+v, held)
+  assert.ok(over, 'over the rail');
+  for (let i = 0; i < 120 && S.player.falling; i++) step(S, { mx: 0, mz: 0, aim: null });
+  assert.ok(Math.abs(S.player.y - heightAt(S.level, S.player.x, S.player.z)) < 1e-9, `down on the ground (${(S.player.y - t.base).toFixed(2)} m over the base)`);
+  assert.ok(S.events.some((e) => e.type === 'noise' && e.kind === 'land' && e.loud > 0.3), 'landing loud after a 3 m drop');
+});
+
+test('a jump on a deck lands on the deck, one on the stair on the stair; under the deck the bar over the way in stops the head', () => {
+  const t = TOWERS[0];
+  let S = on(t, 0.3, -0.3, deckY(t)), top = 0;
+  step(S, { mx: 0, mz: 0, aim: null, jump: true });
+  while (S.player.falling) { step(S, { mx: 0, mz: 0, aim: null }); top = Math.max(top, S.player.y); }
+  assert.ok(top > deckY(t) + 0.4 && S.player.y === deckY(t), `up ${(top - deckY(t)).toFixed(2)} m and down on the planks`);
+  assert.ok(S.events.some((e) => e.type === 'noise' && e.kind === 'land' && e.tag === 'wood'), 'a landing on wood');
+  S = on(t, -3, 0.12, t.base + 1.5); const y0 = S.player.y;
+  step(S, { mx: 0, mz: 0, aim: null, jump: true });
+  while (S.player.falling) step(S, { mx: 0, mz: 0, aim: null });
+  assert.ok(Math.abs(S.player.y - y0) < 1e-9, 'back on the same tread');
+  S = on(t, 0, 1.24); // under the bar at 1.91 m over the way in under the deck: a 1.8 m body has 0.11 m over its head
+  step(S, { mx: 0, mz: 0, aim: null, jump: true });
+  top = 0; while (S.player.falling) { step(S, { mx: 0, mz: 0, aim: null }); top = Math.max(top, S.player.y - t.base); }
+  assert.ok(top < 0.12 && Math.abs(S.player.y - t.base) < 0.02, `the head stopped at the bar: up only ${top.toFixed(3)} m`);
+});
+
 test('the browser draws the tower the rules climb: its feet on the ground, its planks at the deck\'s height, its stair and posts where the parts are', async (t) => {
   const FBX = new URL('../assets/models/game/hut.fbx', import.meta.url);
   if (!(await import('node:fs')).existsSync(FBX)) return t.skip('assets/models/game/hut.fbx not present');

@@ -181,4 +181,18 @@ export const SCENARIOS = [
       return { inp: go(u > -5.2 ? onTower(-5.5, 0.12) : onTower(-9, 0.12)) };
     },
   },
+  // Space held: a jump from the ground and the landing a hunter hears; none crouched or with the bow drawn; then up the tower's stair, a jump on the stair and one on the deck,
+  // each landing back on what was under the feet
+  {
+    name: 'jumps-on-the-ground-the-stair-and-the-deck', seed: 22, ticks: 1000,
+    level: open([hunter(...onTower(-9, -4), Math.atan2(onTower(-9, -4)[0] - onTower(-9, 0.12)[0], onTower(-9, -4)[1] - onTower(-9, 0.12)[1])), { role: 'sleeper', x: 35, z: 35, yaw: 0 }], [], // (the hunter 4 m off, its back turned)
+      { start: { x: onTower(-9, 0.12)[0], z: onTower(-9, 0.12)[1], yaw: 0 }, tower: TOWER, towers: [towerAt] }),
+    drive: (S, t) => {
+      const P = S.player, u = upFrame(S), go = (p) => toward(S, ...p);
+      if (t < 200) return { inp: { jump: (t >= 30 && t < 40) || (t >= 100 && t < 110) || (t >= 150 && t < 160), crouch: t >= 95 && t < 115, draw: t >= 145 && t < 165, aim: [0, 0, 1] } };
+      if (t >= 350 && t < 356) return { inp: { ...go(onTower(-0.9, 0.12)), jump: true } }; // (half way up the stair by now)
+      if (P.y < 3.2) return { inp: go(u < -6.2 ? onTower(-6, 0.12) : onTower(-0.9, 0.12)) };
+      return { inp: { ...(u < 0.3 ? go(onTower(0.5, -0.3)) : {}), jump: t >= 800 && t < 806, aim: [0, 0, 1] } };
+    },
+  },
 ];

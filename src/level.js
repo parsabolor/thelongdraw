@@ -33,7 +33,9 @@ export function terrainHeight(x, z) {
 //   floor a step from it, so that nobody steps onto its top from the upper stair and over it (every part's top is a floor: the deck's, the stair's). rails: a single bar round
 //   three sides of the deck, 0.55 to 0.9 m over it, open where the stair comes up (the corner posts leave no room beside the stair's head to step off): a body on the deck cannot pass
 //   it ('body', deck to bar top), a ray only meets the bar ('sight'). Under the deck: barred on the +u side and along the bottom of the stair side; open on the +v side
-//   under a bar at 1.91 m, between the struts that lean on its posts, so a body walks in there.
+//   under a bar at 1.91 m, between the struts that lean on its posts, so a body walks in there. A jump reaches 0.88 m (0.43 up and a step), so a body can jump the rails
+//   on the deck's sides (0.81 m over it; the +u one, 0.92 m, holds) and drop to the ground, and from the stair's top over the palisade beside it, as it could over a waist-high
+//   rail: a way off the tower other than the stair, loud as it lands.
 // route: three points on the stair's axis that zombies climb by (sim.js goTo): `foot` on the ground before it, `bottom` on its first tread, `top` on the deck.
 // watch: where the scout stands, at the rail on the side that faces the fort, 0.4 m from it, on a plank (from the deck's middle the rail, the posts and the roof hid the yard of the fort from
 // the plateau's scout: a lookout leans on the rail).

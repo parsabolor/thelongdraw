@@ -14,9 +14,9 @@ export const TUNING = {
   dt: 1 / 60,
   gravity: 9.81,
   maxRange: 60, // metres that a loudness of 1.0 carries
-  player: { walk: 2.2, run: 4.2, crouch: 1.2, drawMove: 0.5, radius: 0.35, step: 0.45, height: 1.8, hp: 100, hit: 25, shove: 1.6, stun: 0.6, eyeStand: 1.6, eyeCrouch: 1.0, slope: 1.2, knife: 1.8, knifeCone: 0.5, knifeCd: 0.6 }, // knifeCone: cos 60 degrees either side of where the player faces; height: a body's, for what it walks under (the towers' parts)
+  player: { walk: 2.2, run: 4.2, crouch: 1.2, drawMove: 0.5, radius: 0.35, step: 0.45, height: 1.8, jump: 3, hp: 100, hit: 25, shove: 1.6, stun: 0.6, eyeStand: 1.6, eyeCrouch: 1.0, slope: 1.2, knife: 1.8, knifeCone: 0.5, knifeCd: 0.6 }, // knifeCone: cos 60 degrees either side of where the player faces; height: a body's, for what it walks under (the towers' parts); jump: the speed a jump leaves the floor at (m/s: 0.43 m up in the 60 Hz steps, a soldier with his kit)
   bow: { basic: 10, lure: 2, drawTime: 1.2, minDraw: 0.35, speed: 65, swaySecs: 6, spread: 0.004, moveSpread: 0.012, swayGrow: 0.006, reach: 2.2 },
-  loud: { stepCrouch: 0.05, stepWalk: 0.15, stepRun: 0.35, release: 0.25, soft: 0.35, hard: 0.6, metal: 0.8, kill: 0.1, wound: 0.9, scream: 1, call: 0.8, whistle: 0.4, rummage: 0.08, landPerM: 0.12 },
+  loud: { stepCrouch: 0.05, stepWalk: 0.15, stepRun: 0.35, release: 0.25, soft: 0.35, hard: 0.6, metal: 0.8, kill: 0.1, wound: 0.9, scream: 1, call: 0.8, whistle: 0.4, rummage: 0.08, landPerM: 0.12, landFrom: 0.3 }, // landFrom: the least drop (m) a landing is heard from: then at least a walking step's noise, landPerM a metre beyond that
   bell: { period: 8, ring: 1.6, mask: 0.4 },
   wind: { drift: 0.45, hold: 6, ease: 2 }, // drift: arrow acceleration per m/s of wind (6 m/s moves a full-draw arrow ~0.5 m sideways at 40 m, ~1.1 m at 60 m); hold, ease: see windAt
   aware: { suspicious: 0.3, alert: 0.8, decay: 0.05, sightGain: 1.1, hearGain: 1.5, told: 0.45, close: 3, occlude: 0.5, expose: { crouch: 0.5, still: 0.7, walk: 1, run: 1.5 } },
@@ -1018,7 +1018,7 @@ export function bail(S) {
 
 // ---------- the step ----------
 
-// inp: { mx, mz (world move direction), run, crouch, draw, cancel, aim: [x, y, z] unit vector }
+// inp: { mx, mz (world move direction), run, crouch, draw, cancel, jump (held: a jump each time the feet are on the floor), aim: [x, y, z] unit vector }
 export function step(S, inp) {
   if (S.over) return;
   const dt = TUNING.dt;
@@ -1044,26 +1044,35 @@ function stepPlayer(S, inp, dt) {
   P.stun = Math.max(0, P.stun - dt);
   P.knifeCd = Math.max(0, P.knifeCd - dt);
   if (inp.aim) P.yaw = Math.atan2(inp.aim[0], inp.aim[2]); // where the player faces: the knife swings that way (tests pass aim: null and keep P.yaw)
-  P.run = !!inp.run && !P.crouch && !inp.draw && P.stun <= 0;
+  const free = !P.crouch && !inp.draw && P.stun <= 0; // free to run, or to jump (not crouched, not drawing the bow, not stumbling from a blow)
+  P.run = !!inp.run && free;
   const speed = (P.crouch ? T.player.crouch : P.run ? T.player.run : T.player.walk) * (inp.draw ? T.player.drawMove : 1) * (P.stun > 0 ? 0.35 : 1);
   const m = hyp(inp.mx || 0, inp.mz || 0);
   P.moving = m > 0.01;
   if (P.moving) {
     moveBy(L, P, (inp.mx / m) * speed * dt, (inp.mz / m) * speed * dt, T.player.radius, T.player.step);
-    P.stride += speed * dt;
-    const stride = P.run ? 2.2 : P.crouch ? 1.2 : 1.6;
-    if (P.stride >= stride) { P.stride = 0; playerNoise(S, P.run ? T.loud.stepRun : P.crouch ? T.loud.stepCrouch : T.loud.stepWalk, 'step', tagAt(L, P.x, P.z, P.y)); }
+    if (!P.falling) { // (no footsteps in the air)
+      P.stride += speed * dt;
+      const stride = P.run ? 2.2 : P.crouch ? 1.2 : 1.6;
+      if (P.stride >= stride) { P.stride = 0; playerNoise(S, P.run ? T.loud.stepRun : P.crouch ? T.loud.stepCrouch : T.loud.stepWalk, 'step', tagAt(L, P.x, P.z, P.y)); }
+    }
   }
   const g = floorAt(L, P.x, P.z, P.y);
   if (isFinite(g)) {
-    if (P.y < g || (!P.falling && P.y - g <= T.player.step)) P.y = g; // stepped up, or down a slope or a step
-    else if (P.y > g + 0.001) {
-      if (!P.falling) { P.falling = true; P.fallFrom = P.y; P.vy = 0; }
-      P.vy -= T.gravity * dt; P.y += P.vy * dt;
-      if (P.y <= g) {
+    if (!P.falling && P.y - g <= T.player.step) {
+      P.y = g; // stepped up, or down a slope or a step
+      if (inp.jump && free) { P.falling = true; P.fallFrom = P.y; P.vy = T.player.jump; } // a jump: only from the floor (no second one in the air)
+    } else if (!P.falling) { P.falling = true; P.fallFrom = P.y; P.vy = 0; } // off an edge
+    if (P.falling) {
+      P.vy -= T.gravity * dt;
+      const y = P.y + P.vy * dt;
+      if (P.vy > 0 && !canStand(L, P.x, P.z, y, T.player.radius, T.player.step)) P.vy = 0; // the head meets a part over it (a bar under a deck): the rise stops
+      else P.y = y;
+      if (P.vy > 0) P.fallFrom = P.y; // (the fall is from the top of a jump)
+      if (P.vy <= 0 && P.y <= g) { // landed (on what was under the feet: the ground, a box, a deck or a stair, or a ledge risen over)
         P.y = g; P.falling = false; P.vy = 0;
         const drop = P.fallFrom - g;
-        if (drop > 0.8) playerNoise(S, Math.min(1, T.loud.landPerM * drop), 'land', tagAt(L, P.x, P.z, P.y));
+        if (drop >= T.loud.landFrom) playerNoise(S, Math.min(1, Math.max(T.loud.stepWalk, T.loud.landPerM * drop)), 'land', tagAt(L, P.x, P.z, P.y));
       }
     }
   }

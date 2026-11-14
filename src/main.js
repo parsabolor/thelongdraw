@@ -374,7 +374,7 @@ function reset() {
 const TAG_TIME = 1; // seconds a zombie must stay anywhere inside the binocular viewfinder (either lens, in line of sight) to be tagged
 const tagTimers = new Map(), tagView = []; // zombie id -> seconds in view; this frame's zombies in view: { z, t, px, py } (px, py: where they are on screen)
 const lens = (w, h) => { const r = Math.min(h * 0.42, w * 0.25); return { r, gap: r * 0.55 }; }; // the two binocular lenses: radius and half the distance between their centres
-const HELP = 'WASD move   Shift run   C crouch on/off   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up an arrow, or bail at the bike, or cancel a draw\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
+const HELP = 'WASD move   Shift run   Space jump   C crouch on/off   B binoculars   M sound   G AI debug\nHold right mouse: raise the bow (first person, slider sight: the wheel sets its range, 20 to 60 m). Hold left mouse: draw; release to fire.\n1 arrow   2 whistling arrow (lure)   F knife (silent kill from behind or on a sleeper, a noisy stab otherwise)   E pick up an arrow, or bail at the bike, or cancel a draw\nBinoculars: wheel zooms, anything in the viewfinder for 1 second is tagged, right mouse or B to lower.\nWind (bottom right): the arrow is where the air is going, relative to where you look. It pushes your arrows sideways, more at range.\nR restart   H help';
 const showScreen = (html) => { $('screenbody').innerHTML = html; $('screen').classList.remove('hidden'); };
 const hideScreen = () => $('screen').classList.add('hidden');
 let toastTimer = 0;
@@ -470,13 +470,13 @@ function forward3(yaw, pitch) {
 function readInput() {
   const f = [Math.sin(view.yaw), Math.cos(view.yaw)], r = [-Math.cos(view.yaw), Math.sin(view.yaw)];
   const kz = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), kx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-  const want = (mouseDown || keys.has('Space')) && mode === 'walk';
+  const want = mouseDown && mode === 'walk';
   if (!want) drawLatch = false;
   const cancel = cancelPending;
   if (cancel) { drawLatch = true; cancelPending = false; }
   return {
     mx: f[0] * kz + r[0] * kx, mz: f[1] * kz + r[1] * kx,
-    run: keys.has('ShiftLeft') || keys.has('ShiftRight'), crouch: crouchToggle,
+    run: keys.has('ShiftLeft') || keys.has('ShiftRight'), crouch: crouchToggle, jump: keys.has('Space') && mode === 'walk',
     draw: want && !drawLatch, cancel, aim: aimDir, from: camPos,
   };
 }

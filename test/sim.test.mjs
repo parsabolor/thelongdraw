@@ -345,6 +345,29 @@ test('terrain: a box needs flat ground; the pad is exactly 0; the relief is the 
   assert.ok(Math.abs(LEVEL.terrain(-99.99, -40) - LEVEL.terrain(-100.01, -40)) < 0.1);
 });
 
+test('Space held jumps: the player rises about 0.43 m and lands back on the ground, heard like a footstep; never in the air, crouched, drawing or stumbling', () => {
+  const S = createState(open([guard]), 1), P = S.player, lands = () => S.events.filter((e) => e.type === 'noise' && e.kind === 'land');
+  let top = 0, ticks = 0;
+  step(S, { ...idle, jump: true });
+  assert.ok(P.falling && P.vy > 0, 'off the ground');
+  while (P.falling && ticks++ < 120) { step(S, { ...idle, jump: true }); top = Math.max(top, P.y); }
+  assert.ok(top > 0.4 && top < 0.5 && P.y === 0, `up ${top.toFixed(3)} m and back on the ground, in ${(ticks / 60).toFixed(2)} s`);
+  assert.equal(lands().length, 1, 'one landing, heard');
+  assert.ok(lands()[0].loud === TUNING.loud.stepWalk, 'as loud as a walking step');
+  // held, it goes again only from the floor: one jump in the air is all there is
+  step(S, { ...idle, jump: true });
+  assert.ok(P.falling, 'held: up again from the floor');
+  const vy = P.vy; step(S, { ...idle, jump: true });
+  assert.ok(P.vy < vy, 'no second jump in the air: it only slows');
+  run(S, 1);
+  for (const [why, inp, set] of [['crouched', { crouch: true }], ['drawing', { draw: true }], ['stumbling', {}, () => { P.stun = 0.5; }]]) {
+    if (set) set();
+    step(S, { ...idle, ...inp, jump: true });
+    assert.ok(!P.falling && P.y === 0, `no jump ${why}`);
+    run(S, 1);
+  }
+});
+
 test('walking downhill follows the ground with no landing noise; steps carry a surface tag', () => {
   const slope = (x, z) => 0.25 * z;
   const S = createState({ ...open([guard]), terrain: slope, terrainTag: () => 'grass' }, 1);

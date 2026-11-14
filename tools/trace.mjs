@@ -19,7 +19,7 @@ import { TUNING, createState, step, knife, retrieve, bail, tagById } from '../sr
 export const FORMAT = 'longdraw-trace/1';
 export const CHECKPOINT_EVERY = 60;
 const LEVELS = { outpost: LEVEL };
-const DEFAULT_INPUT = { mx: 0, mz: 0, aim: null, from: null, crouch: false, run: false, draw: false, cancel: false };
+const DEFAULT_INPUT = { mx: 0, mz: 0, aim: null, from: null, crouch: false, run: false, draw: false, cancel: false, jump: false };
 
 /** A hash of the rules (TUNING) a trace was recorded under, so a trace says when it is out of date. */
 export const tuningHash = () => createHash('sha256').update(JSON.stringify(TUNING)).digest('hex').slice(0, 16);
