@@ -29,7 +29,7 @@ test('the fort can be entered through the doorway (even 0.12 m off its middle), 
   }
   const back = alone(place(fresh(), 1, -9));
   assert.ok(walk(back, [[1, -6.5], [1, -3], [1, 0]], 10) < 3, 'the back wall (once missing from the shell: it is in the scan\'s second material) stops a body');
-  assert.ok(back.player.z < -5, `and it stays outside (z ${back.player.z.toFixed(2)})`);
+  assert.ok(back.player.z < -5 && back.player.z > -7, `and it walks up to it and stays outside (z ${back.player.z.toFixed(2)})`);
   const path = findPath(fresh().level, 1.5, 9, 0, -1);
   assert.ok(path && Math.hypot(path.at(-1)[0] - 0, path.at(-1)[1] + 1) < 1, 'the planner finds the way in too');
 });
@@ -38,7 +38,7 @@ test('the walls are solid for a body: walking straight at the front wall, away f
   for (const x of [-5.5, -3, 3, 5.5]) {
     const S = alone(place(fresh(), x, 7)); // (the yard's screamer patrols this strip: it would shove the body along the wall)
     for (let t = 0; t < 600; t++) step(S, { mx: 0, mz: -1, aim: null }); // ten seconds straight north
-    assert.ok(S.player.z > 5.9, `a body at x ${x} stops at the wall (z ${S.player.z.toFixed(2)})`);
+    assert.ok(S.player.z > 5.9 && S.player.z < 6.5, `a body at x ${x} walks to the wall and stops at it (z ${S.player.z.toFixed(2)})`);
   }
 });
 

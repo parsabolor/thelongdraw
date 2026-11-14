@@ -610,7 +610,7 @@ function syncMeshes(dt) {
     if (packMesh) scene.remove(packMesh);
     packMesh = new THREE.Group(); packMesh.userData.plain = !props.arrow;
     for (let i = 0; i < sim.PACK.arrows; i++) {
-      const m = makeArrow('basic'); m.quaternion.setFromUnitVectors(UP, new THREE.Vector3(1, 0, 0)); m.position.set(0.35, 0.02, (i - 2) * 0.03); packMesh.add(m);
+      const m = makeArrow('basic'); m.quaternion.setFromUnitVectors(UP, new THREE.Vector3(1, 0, 0)); m.position.set(0.35, 0.02, (i - (sim.PACK.arrows - 1) / 2) * 0.03); packMesh.add(m);
     }
     scene.add(packMesh);
   }

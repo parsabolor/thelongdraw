@@ -38,6 +38,9 @@ test('the world is valid: no floating boxes; start, bike, every post and patrol 
     // the yard (inside the fortress's 5 m wall, which screens it from some of them) or the fort's approaches just outside the wall
     const watched = [[0, 10], [0, -8], [8, 0], [-8, 0], [1.4, 16], [16, 0], [0, -16], [-16, 0]];
     assert.ok(watched.some(([x, z]) => hasLOS(L, s.x, me.y + 1.6, s.z, x, 1.6, z)), `the scout at ${s.x}, ${s.z} watches the fort`);
+    // its sight (sightRange) reaches the fort's middle from up there, and not the start (where the player stands at the beginning)
+    assert.ok(sightRange(TUNING.roles.scout, me.y, heightAt(L, 0, 0)) > Math.hypot(s.x, s.z), `the scout at ${s.x}, ${s.z} sees as far as the fort`);
+    assert.ok(sightRange(TUNING.roles.scout, me.y, S.player.y) < Math.hypot(s.x - S.player.x, s.z - S.player.z), `the scout at ${s.x}, ${s.z} does not see the start`);
   }
   for (const p of LEVEL.props) for (const [name, q] of [['start', LEVEL.start], ...spots]) assert.ok(Math.hypot(p.x - q.x, p.z - q.z) > p.r + 1, `a ${p.kind} blocks ${name}`);
 });

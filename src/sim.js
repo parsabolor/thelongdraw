@@ -1034,7 +1034,7 @@ export function tagById(S, id) {
 // picked up once with E, before any arrow in reach. Not part of the state or of `step` (main.js holds it, as the engine holds the battery), so the traces never see it.
 export const PACK = { x: -3.8, z: -2, arrows: 5 };
 export const createPack = (L) => ({ x: PACK.x, y: heightAt(L, PACK.x, PACK.z), z: PACK.z, taken: false });
-export const packInReach = (S, pack) => !!pack && !pack.taken && !S.over && hyp(pack.x - S.player.x, pack.z - S.player.z) < TUNING.bow.reach && Math.abs(pack.y - S.player.y) < 3;
+export const packInReach = (S, pack) => !pack.taken && !S.over && hyp(pack.x - S.player.x, pack.z - S.player.z) < TUNING.bow.reach && Math.abs(pack.y - S.player.y) < 3;
 // Takes the pack if it is in reach: its arrows go into the quiver (past the 10 the player starts with: there is no limit), with a rummage as for an arrow. Whether it did.
 export function takePack(S, pack) {
   if (!packInReach(S, pack)) return false;
