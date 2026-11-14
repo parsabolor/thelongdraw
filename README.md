@@ -20,12 +20,12 @@ with its modification time. Use it rather than a plain static server: a browser 
 
 | | |
 |---|---|
-| `WASD`, `Shift`, `C` | move, run, crouch |
+| `WASD`, `Shift`, `Space`, `C` | move, run, jump, crouch on and off |
 | right mouse (hold) | raise the bow (first person, slider sight); the wheel sets the sight's range, 20 to 60 m |
 | left mouse (hold, release) | draw, fire |
 | `1`, `2` | plain arrow, whistling arrow (a lure) |
 | `F` | knife: a silent kill from behind or on a sleeper, a noisy stab otherwise |
-| `E` | pick up an arrow, or bail out at the bike |
+| `E` | pick up arrows (a pack of five lies in the hall), or bail out at the bike; while drawing, let the draw down |
 | `B` | binoculars: the wheel zooms, anything inside the viewfinder for one second is tagged |
 | `G`, `M`, `H`, `R` | AI debug map, sound on/off, help, restart |
 
