@@ -2,7 +2,7 @@
 
 `map-icons.png` is the minimap's icons, the same picture as the engine's (baked there by `tools/map-icons.html` from the SVGs in its `assets/ui/map-icons/`): every icon made a white silhouette with a dark edge, sized for the map.
 
-- The player and the bike: "navigation" and "two_wheeler" (filled) from Material Symbols by Google (https://github.com/google/material-design-icons, https://fonts.google.com/icons), licensed under the Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+- The player and the bike: "navigation" and "two_wheeler" (filled) from Material Symbols by Google (https://github.com/google/material-design-icons, https://fonts.google.com/icons), licensed under the Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0; a copy of the licence is in LICENSE-Apache-2.0.txt next to this file).
 - A walker: "Shambling zombie" by Delapouite (https://game-icons.net/1x1/delapouite/shambling-zombie.html), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).
 - The armored zombie: "Kevlar vest" by Skoll (https://game-icons.net/1x1/skoll/kevlar-vest.html), CC BY 3.0.
 - A scout: "Binoculars" by Delapouite (https://game-icons.net/1x1/delapouite/binoculars.html), CC BY 3.0.
