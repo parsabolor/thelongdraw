@@ -37,7 +37,7 @@ const input6 = (o) => {
   if (o && typeof o === 'object') return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, input6(v)]));
   return o;
 };
-const point = (p) => (p ? { x: p.x, z: p.z } : null);
+const point = (p) => (p ? { x: p.x, z: p.z, y: p.y ?? null } : null); // (y: how high a place is when it matters, a player seen up a tower; null on the ground)
 
 /** Everything in the state that the rules decide, rounded. */
 export function snapshot(S) {

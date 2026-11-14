@@ -3,7 +3,8 @@
 // arrows with drop and wind, a lure, retrieving, the knife, tagging, a fall. Most run on the outpost; the small ones run on levels defined inline (the trace carries the
 // definition), which is how the scenario tests in test/sim.test.mjs build theirs.
 //   drive(S, tick) -> { inp, acts }   (see tools/trace.mjs for the format)
-import { dropAngle, hasLOS, playerEye } from '../src/sim.js';
+import { TUNING, dropAngle, hasLOS, playerEye } from '../src/sim.js';
+import { TOWER } from '../src/level.js';
 
 const toward = (S, x, z) => {
   const P = S.player, dx = x - P.x, dz = z - P.z, d = Math.hypot(dx, dz) || 1;
@@ -47,6 +48,11 @@ const stabFromBehind = (S) => {
   const z = S.zombies[0], d = Math.hypot(z.x - S.player.x, z.z - S.player.z);
   return { inp: { ...toward(S, z.x, z.z), crouch: true, aim: [0, 0, -1] }, acts: d < 1.5 && S.player.knifeCd === 0 && z.state !== 'dead' ? [{ do: 'knife' }] : [] };
 };
+
+// A lookout tower on flat ground at the middle of an open level (level.js TOWER, turned as the outpost's are), and a point of its frame (u up its stair, v across) in the world.
+const towerAt = { x: 0, z: 0, base: 0, yaw: 0.6, c: Math.cos(0.6 + TOWER.turn), s: Math.sin(0.6 + TOWER.turn) };
+const onTower = (u, v) => [towerAt.x + towerAt.c * u + towerAt.s * v, towerAt.z - towerAt.s * u + towerAt.c * v];
+const upFrame = (S) => towerAt.c * (S.player.x - towerAt.x) - towerAt.s * (S.player.z - towerAt.z); // how far up the stair's line the player is (u)
 
 export const SCENARIOS = [
   // the world alone: patrols, the random draws behind them, the wind, the bell, a binocular tag
@@ -156,5 +162,23 @@ export const SCENARIOS = [
   {
     name: 'lure-then-the-patrol-points', seed: 18, ticks: 5400, level: open([hunter(0, -6, Math.PI), guard]),
     drive: (S, t) => ({ inp: { aim: aimAt(S, 0, 0.3, 10), draw: t >= 30 && t < 110 }, acts: t === 1 ? [{ do: 'kind', v: 'lure' }] : [] }),
+  },
+  // up a lookout tower's stair onto its deck; a hunter sees the player up there, follows him up the stair and strikes; two stabs kill it on the deck; an arrow shot down into the
+  // planks sticks in them and is picked up; then back down the stair to the ground
+  {
+    name: 'a-hunter-follows-up-a-tower', seed: 21, ticks: 1000,
+    level: open([hunter(...onTower(-6, 9), Math.PI), { role: 'sleeper', x: 35, z: 35, yaw: 0 }], [], { start: { x: onTower(-9, 0.12)[0], z: onTower(-9, 0.12)[1], yaw: 0 }, tower: TOWER, towers: [towerAt] }),
+    drive: (S) => {
+      const P = S.player, z = S.zombies[0], d = Math.hypot(z.x - P.x, z.z - P.z), u = upFrame(S), go = (p) => toward(S, ...p);
+      if (z.state !== 'dead') {
+        if (d < 1.6 && Math.abs(z.y - P.y) < 1) return { inp: { aim: [(z.x - P.x) / d, 0, (z.z - P.z) / d] }, acts: P.knifeCd === 0 ? [{ do: 'knife' }] : [] };
+        if (P.y < 3) return { inp: go(u < -6.2 ? onTower(-6, 0.12) : onTower(-0.9, 0.12)) };
+        return { inp: { ...(u < 0.3 ? go(onTower(0.5, -0.3)) : {}), aim: [0, 0, 1] } };
+      }
+      if (S.stats.shots === 0) return { inp: { aim: [0, -1, 0], draw: P.drawT < TUNING.bow.drawTime } };
+      const stuck = S.arrows.find((a) => a.state === 'stuck' && !a.zid);
+      if (stuck) return { inp: { aim: [0, 0, 1] }, acts: [{ do: 'retrieve' }] };
+      return { inp: go(u > -5.2 ? onTower(-5.5, 0.12) : onTower(-9, 0.12)) };
+    },
   },
 ];

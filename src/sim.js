@@ -6,13 +6,15 @@
 //   - the raw boxes for line of sight, noise occlusion and arrows
 // A box may say which view it belongs to: `mode: 'sight'` blocks only rays (a thin wall with window slots, which would fill whole 1 m cells if it also blocked
 // bodies), `mode: 'body'` blocks only bodies (cells aligned for walking through a doorway); no mode, both.
-// Constraint: no walkable surface above another (see level.js); buildLevel() throws on a floating box.
+// Constraint: no walkable surface above another in the heightfield (see level.js); buildLevel() throws on a floating box. The lookout towers (level.js TOWER) are the
+// exception, kept apart from the grid: their parts are boxes in each tower's frame that bodies stand on and walk under (floorAt, canStand), rays meet (rayWorld), path
+// finding keeps off (the plan mask) and zombies climb by a fixed route (goTo).
 
 export const TUNING = {
   dt: 1 / 60,
   gravity: 9.81,
   maxRange: 60, // metres that a loudness of 1.0 carries
-  player: { walk: 2.2, run: 4.2, crouch: 1.2, drawMove: 0.5, radius: 0.35, step: 0.45, hp: 100, hit: 25, shove: 1.6, stun: 0.6, eyeStand: 1.6, eyeCrouch: 1.0, slope: 1.2, knife: 1.8, knifeCone: 0.5, knifeCd: 0.6 }, // knifeCone: cos 60 degrees either side of where the player faces
+  player: { walk: 2.2, run: 4.2, crouch: 1.2, drawMove: 0.5, radius: 0.35, step: 0.45, height: 1.8, hp: 100, hit: 25, shove: 1.6, stun: 0.6, eyeStand: 1.6, eyeCrouch: 1.0, slope: 1.2, knife: 1.8, knifeCone: 0.5, knifeCd: 0.6 }, // knifeCone: cos 60 degrees either side of where the player faces; height: a body's, for what it walks under (the towers' parts)
   bow: { basic: 10, lure: 2, drawTime: 1.2, minDraw: 0.35, speed: 65, swaySecs: 6, spread: 0.004, moveSpread: 0.012, swayGrow: 0.006, reach: 2.2 },
   loud: { stepCrouch: 0.05, stepWalk: 0.15, stepRun: 0.35, release: 0.25, soft: 0.35, hard: 0.6, metal: 0.8, kill: 0.1, wound: 0.9, scream: 1, call: 0.8, whistle: 0.4, rummage: 0.08, landPerM: 0.12 },
   bell: { period: 8, ring: 1.6, mask: 0.4 },
@@ -119,7 +121,19 @@ export function buildLevel(def) {
     }
     for (let i = 0; i < w * d; i++) if (!reach[i] && obs[i] === -Infinity) { obs[i] = Infinity; obsTag[i] = 'rock'; h[i] = Infinity; sealed++; } // boxes and props keep their own height
   }
-  return { boxes: def.boxes.filter((b) => b.mode !== 'body'), props, x0, z0, w, d, ter, obs, obsTag, h, patrol: def.patrol || [], tag: def.terrainTag || (() => 'dirt'), limit, minY, sealed };
+  const L = { boxes: def.boxes.filter((b) => b.mode !== 'body'), props, x0, z0, w, d, ter, obs, obsTag, h, patrol: def.patrol || [], tag: def.terrainTag || (() => 'dirt'), limit, minY, sealed };
+  // the lookout towers: the same parts at each (level.js TOWER), and how far the furthest corner of any is from a tower's middle (a body or ray further off meets none)
+  L.tower = def.tower || null; L.towers = def.towers || []; L.towerReach = 0; L.plan = new Uint8Array(w * d);
+  if (L.towers.length) {
+    for (const p of L.tower.parts) for (const u of p.u) for (const v of p.v) L.towerReach = Math.max(L.towerReach, Math.sqrt(u * u + v * v));
+    // path finding keeps off every cell where a body (a little wider than one, so that the paths between cell middles clear the parts) standing on the ground at its
+    // middle would be in a part: round the posts, the palisade, the low end of the stair. The cells under a deck stay open where the body walks in under it.
+    for (let iz = 0; iz < d; iz++) for (let ix = 0; ix < w; ix++) {
+      const x = x0 + ix + 0.5, z = z0 + iz + 0.5;
+      if (towerBlocks(L, x, z, terrainAt(L, x, z), 0.5, TUNING.player.step)) L.plan[iz * w + ix] = 1;
+    }
+  }
+  return L;
 }
 
 const cellIndex = (L, x, z) => {
@@ -143,6 +157,84 @@ export function surfaceTag(L, x, z) {
 }
 // Open ground: inside the play limit and not blocked by an obstacle.
 export const openAt = (L, x, z) => { const i = cellIndex(L, x, z); return i >= 0 && L.obs[i] === -Infinity && Math.abs(x) < L.limit && Math.abs(z) < L.limit; };
+
+// ---------- the lookout towers (level.js TOWER) ----------
+
+// A height of a part (over its tower's base) as the tower is drawn: under `foot` m it is let down toward the ground where the ground falls `drop` m below the base, fully at 0.
+const letDown = (L, y, drop) => (y < L.tower.foot ? y - drop * (1 - Math.max(y, 0) / L.tower.foot) : y);
+// The highest top of a tower part (not a 'sight' one) under (x, z) that is no higher than `reach`, and whose tower it is: [top, tower], or [-Infinity, -1] where there is none.
+function towerTop(L, x, z, reach) {
+  let top = -Infinity, which = -1;
+  for (let k = 0; k < L.towers.length; k++) {
+    const t = L.towers[k], dx = x - t.x, dz = z - t.z;
+    if (dx * dx + dz * dz > L.towerReach * L.towerReach) continue;
+    const u = t.c * dx - t.s * dz, v = t.s * dx + t.c * dz, drop = Math.max(0, t.base - terrainAt(L, x, z));
+    for (const p of L.tower.parts) {
+      if (p.mode === 'sight' || u < p.u[0] || u > p.u[1] || v < p.v[0] || v > p.v[1]) continue;
+      const y = t.base + letDown(L, p.y[1] + (p.slope || 0) * (u - p.u[0]), drop);
+      if (y <= reach && y > top) { top = y; which = k; }
+    }
+  }
+  return [top, which];
+}
+// What a body standing at height y at (x, z) stands on: the ground (heightAt) or a tower's deck or stair, whichever is higher, of those no more than a step above its feet.
+export const floorAt = (L, x, z, y) => Math.max(heightAt(L, x, z), towerTop(L, x, z, y + TUNING.player.step)[0]);
+// The material under a body standing at y: a tower's wood where it stands on one.
+const tagAt = (L, x, z, y) => (towerTop(L, x, z, y + TUNING.player.step)[0] > heightAt(L, x, z) ? 'wood' : surfaceTag(L, x, z));
+// Whether a body of radius r standing at y at (x, z) is in a tower part (not a 'sight' one): one that overlaps its disc and, where it is nearest the body's middle, stands between
+// `step` over its feet and the top of its head (TUNING.player.height). (A sloped part is taken at that one place: a body walks up the stair by its middle, as it stands on it.)
+function towerBlocks(L, x, z, y, r, step) {
+  for (const t of L.towers) {
+    const dx = x - t.x, dz = z - t.z, far = L.towerReach + r;
+    if (dx * dx + dz * dz > far * far) continue;
+    const u = t.c * dx - t.s * dz, v = t.s * dx + t.c * dz, drop = Math.max(0, t.base - terrainAt(L, x, z)), knee = y + step - t.base, head = y + TUNING.player.height - t.base;
+    for (const p of L.tower.parts) {
+      if (p.mode === 'sight') continue;
+      const nu = Math.min(Math.max(u, p.u[0]), p.u[1]), cu = nu - u, cv = Math.min(Math.max(v, p.v[0]), p.v[1]) - v;
+      if (cu * cu + cv * cv >= r * r) continue;
+      const rise = (p.slope || 0) * (nu - p.u[0]);
+      if (letDown(L, p.y[1] + rise, drop) > knee && letDown(L, p.y[0] + rise, drop) < head) return true;
+    }
+  }
+  return false;
+}
+// Where a body at (x, z, y) is, for path finding: -1 on the ground (or less than a metre up a stair, where the ground's paths serve), else 2 * its tower + 1 on the deck, + 0 on
+// the stair. y undefined (a point that is only a place on the map) is on the ground.
+function placeOf(L, x, z, y) {
+  if (y === undefined || y === null || !L.towers.length) return -1;
+  const [top, k] = towerTop(L, x, z, y + TUNING.player.step);
+  if (k < 0 || top - terrainAt(L, x, z) < 1) return -1;
+  return 2 * k + (top >= L.towers[k].base + L.tower.deck - 0.01 ? 1 : 0);
+}
+// A point of a tower's route (level.js TOWER.route) in the world.
+const routePoint = (t, [u, v]) => [t.x + t.c * u + t.s * v, t.z - t.s * u + t.c * v];
+// The first tower part (not a 'body' one) the segment a -> b meets before `bestT`, as a fraction along it, or -1. In a tower's frame, with y taken less `slope` (u - u0), a part
+// is a box (the map is affine, so fractions along the segment are kept).
+function rayTowers(L, ax, ay, az, bx, by, bz, bestT) {
+  let best = -1, t0 = 0, t1 = 0;
+  const slab = (o, e, lo, hi) => { // narrows t0..t1 to where o + (e - o) t lies in lo..hi; false once that is empty (rayBoxes' test, step for step)
+    const dd = e - o;
+    if (dd === 0) return o >= lo && o <= hi;
+    let a = (lo - o) / dd, c = (hi - o) / dd;
+    if (a > c) { const tmp = a; a = c; c = tmp; }
+    if (a > t0) t0 = a;
+    if (c < t1) t1 = c;
+    return t0 <= t1;
+  };
+  const ex = bx - ax, ez = bz - az, ee = ex * ex + ez * ez;
+  for (const t of L.towers) {
+    const fx = t.x - ax, fz = t.z - az, q = ee > 0 ? Math.min(1, Math.max(0, (fx * ex + fz * ez) / ee)) : 0, gx = fx - q * ex, gz = fz - q * ez;
+    if (gx * gx + gz * gz > L.towerReach * L.towerReach) continue; // the segment passes no nearer the tower than its furthest part
+    const au = t.c * (ax - t.x) - t.s * (az - t.z), av = t.s * (ax - t.x) + t.c * (az - t.z), bu = t.c * (bx - t.x) - t.s * (bz - t.z), bv = t.s * (bx - t.x) + t.c * (bz - t.z);
+    for (const p of L.tower.parts) {
+      if (p.mode === 'body') continue;
+      const k = p.slope || 0;
+      t0 = 0; t1 = bestT;
+      if (slab(au, bu, p.u[0], p.u[1]) && slab(ay - t.base - k * (au - p.u[0]), by - t.base - k * (bu - p.u[0]), p.y[0], p.y[1]) && slab(av, bv, p.v[0], p.v[1])) { best = t0; bestT = t0; }
+    }
+  }
+  return best;
+}
 
 // ---------- geometry ----------
 
@@ -206,6 +298,8 @@ function rayTerrain(L, ax, ay, az, bx, by, bz, skip) {
 export function rayWorld(L, ax, ay, az, bx, by, bz, skip = 0) {
   let best = rayBoxes(L, ax, ay, az, bx, by, bz);
   if (best) best.kind = 'box';
+  const tw = rayTowers(L, ax, ay, az, bx, by, bz, best ? best.t : 1);
+  if (tw >= 0) best = { t: tw, tag: 'wood', kind: 'box' };
   for (const p of L.props) {
     const t = segCylinder(ax, ay, az, bx, by, bz, p.x, p.z, p.r, p.y0, p.y1);
     if (t >= 0 && (!best || t < best.t)) best = { t, tag: p.kind === 'tree' ? 'wood' : 'rock', kind: 'prop' };
@@ -232,9 +326,9 @@ export function segSphere(ax, ay, az, bx, by, bz, cx, cy, cz, r) {
 // merely steep cannot stop the body: a corner test against the terrain made slopes above ~0.6 impassable by a few millimetres even where the
 // planner routed over them. What is too steep is decided once, by the sealing in buildLevel.
 const obsAt = (L, x, z) => { const i = cellIndex(L, x, z); return i < 0 ? Infinity : L.obs[i]; };
-function canStand(L, x, z, y, r, step) {
+export function canStand(L, x, z, y, r, step) {
   return heightAt(L, x, z) <= y + step && obsAt(L, x - r, z - r) <= y + step && obsAt(L, x + r, z - r) <= y + step &&
-    obsAt(L, x - r, z + r) <= y + step && obsAt(L, x + r, z + r) <= y + step;
+    obsAt(L, x - r, z + r) <= y + step && obsAt(L, x + r, z + r) <= y + step && !towerBlocks(L, x, z, y, r, step);
 }
 function moveBy(L, e, dx, dz, r, step, n = 1) {
   for (let i = 0; i < n; i++) {
@@ -271,9 +365,10 @@ class Heap {
 }
 
 const NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [-1, 1, 1.4142], [1, -1, 1.4142], [-1, -1, 1.4142]];
-const edgeOK = (L, i, j, down, dist = 1) => walkEdge(L.h, L.obs, i, j, dist, down);
+const edgeOK = (L, i, j, down, dist = 1) => walkEdge(L.h, L.obs, i, j, dist, down) && !L.plan[j]; // (and not into a cell a tower's parts block: buildLevel's plan)
+const planAt = (L, x, z) => { const i = cellIndex(L, x, z); return i >= 0 && L.plan[i] === 1; };
 
-function lineOK(L, ax, az, bx, bz, down) { // the walkEdge rule sampled along a straight line, plus a sideways probe for obstacles only (the body ignores terrain at its corners)
+function lineOK(L, ax, az, bx, bz, down) { // the walkEdge rule sampled along a straight line, plus a sideways probe for obstacles only (the body ignores terrain at its corners) and the towers' plan
   const len = hyp(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / 0.4)), run = len / n, step = TUNING.player.step;
   const px = len ? -(bz - az) / len * 0.4 : 0, pz = len ? (bx - ax) / len * 0.4 : 0;
   let prev = heightAt(L, ax, az), prevBare = obsAt(L, ax, az) === -Infinity;
@@ -281,6 +376,7 @@ function lineOK(L, ax, az, bx, bz, down) { // the walkEdge rule sampled along a 
     const t = s / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t, h = heightAt(L, x, z), dh = h - prev, bare = obsAt(L, x, z) === -Infinity;
     if (!(bare && prevBare ? Math.abs(dh) <= TUNING.player.slope * run : dh <= step && dh >= -down)) return false;
     if (obsAt(L, x + px, z + pz) > h + step || obsAt(L, x - px, z - pz) > h + step) return false;
+    if (planAt(L, x, z) || planAt(L, x + px, z + pz) || planAt(L, x - px, z - pz)) return false;
     prev = h; prevBare = bare;
   }
   return true;
@@ -388,7 +484,7 @@ export function createState(def, seed = 1) {
     const rp = TUNING.roles[s.role];
     if (rp.hold !== undefined && (s.face || []).length !== (s.patrol || []).length) throw new Error('a spawn that holds at its stops needs a facing for each: ' + JSON.stringify(s));
     const z = {
-      id: S.nextId++, kind: s.role, role: s.role, x: s.x, z: s.z, y: s.y ?? heightAt(level, s.x, s.z), perch: s.y, yaw: s.yaw || 0, // `y` (a scout's lookout deck) stands it above the ground, and it stays there
+      id: S.nextId++, kind: s.role, role: s.role, x: s.x, z: s.z, y: s.y ?? heightAt(level, s.x, s.z), yaw: s.yaw || 0, // `y` (a scout's lookout deck) stands it on what is there (floorAt)
       state: rp.wake ? 'dormant' : 'idle', meter: 0, sens: 1, hp: TUNING.zombie.hp, tagged: false, sees: false,
       post: { x: s.x, z: s.z, yaw: s.yaw || 0 }, patrol: s.patrol || [], face: s.face || [], pi: 0, wait: 0, path: null, pi2: 0, goal: null, repath: 0,
       point: null, arrived: false, searchC: null, leg: 0, lkp: null, stim: null, seenT: -99, lastStim: -99, heardT: -99, timer: 0, atk: 0, screamed: false, report: 0,
@@ -416,7 +512,7 @@ function hear(S, zb, x, y, z, loud, src, target) {
   let s = loud * (1 - d / range) * rp.hear * zb.sens;
   if (!hasLOS(S.level, x, y, z, zb.x, zb.y + 1.6, zb.z)) s *= T.aware.occlude;
   if (src === 'player' && S.bell.ring) s *= T.bell.mask;
-  heard(S, zb, s * T.aware.hearGain, target ? { x: target.x, z: target.z } : { x, z });
+  heard(S, zb, s * T.aware.hearGain, target ? { x: target.x, z: target.z, y: target.y } : { x, z, y }); // (y: a noise up a tower is followed up it)
 }
 // What a zombie does with a stimulus of strength `gain` that points at `stim`: its awareness grows, and whatever it is doing is pointed at the spot.
 function heard(S, zb, gain, stim) {
@@ -450,7 +546,7 @@ function wake(S, z) {
 function alertEnter(S, z) {
   setState(S, z, 'alert');
   z.meter = 1; z.arrived = false; z.path = null; z.goal = null;
-  if (!z.lkp) z.lkp = z.stim || { x: S.player.x, z: S.player.z };
+  if (!z.lkp) z.lkp = z.stim || { x: S.player.x, z: S.player.z, y: S.player.y };
   z.seenT = Math.max(z.seenT, S.t - 0.1);
   S.events.push({ type: 'alert', id: z.id, x: z.x, y: z.y + 1.6, z: z.z });
   if (z.role === 'scout') { z.report = TUNING.zombie.scoutReport; scoutCall(S, z, z.lkp); }
@@ -466,7 +562,7 @@ function scoutCall(S, z, at) {
   for (const o of S.zombies) if (o !== z && o.role !== 'scout' && o.state !== 'dead' && o.state !== 'dormant') told(S, o, at);
 }
 // Told where the player is (by a scout's report): it has a reason to go and look, and whatever it was doing now points at that spot.
-function told(S, o, at) { heard(S, o, Math.max(0, TUNING.aware.told - o.meter), { x: at.x, z: at.z }); }
+function told(S, o, at) { heard(S, o, Math.max(0, TUNING.aware.told - o.meter), { x: at.x, z: at.z, y: at.y }); }
 // A hunter that finds the player pulls the hunters around it toward the same spot (suspicious, not alert).
 function packPull(S, z) {
   for (const o of S.zombies) {
@@ -523,17 +619,43 @@ function steer(S, z, wx, wz, speed, dt) {
   // The planner routes through cell centres, 0.5 m from any obstacle cell, but the body (R = 0.35) can drift off that line and catch a corner of
   // a tree or wall: with almost no progress for 0.4 s, slide toward the middle of the current cell, which the planner knows is clear.
   z.jam = hyp(z.x - ox, z.z - oz) < speed * dt * 0.3 ? (z.jam || 0) + dt : 0;
-  if (z.jam > 0.4) {
+  if (z.jam > 0.4 && placeOf(S.level, z.x, z.z, z.y) < 0) { // (up on a tower the cell's middle may be in the air beside the stair)
     const cx = Math.floor(z.x) + 0.5, cz = Math.floor(z.z) + 0.5, cd = hyp(cx - z.x, cz - z.z);
     if (cd > 0.05) moveBy(S.level, z, ((cx - z.x) / cd) * speed * dt, ((cz - z.z) / cd) * speed * dt, R, step);
     if (z.jam > 0.9) z.jam = 0;
   }
-  z.y = z.perch ?? heightAt(S.level, z.x, z.z);
+  z.y = floorAt(S.level, z.x, z.z, z.y);
   z.yaw = turn(z.yaw, Math.atan2(dx, dz), 10 * dt);
 }
-function goTo(S, z, tx, tz, speed, dt) {
-  if ((!z.goal || hyp(z.goal.x - tx, z.goal.z - tz) > 1.5) && z.repath <= 0) {
-    z.path = findPath(S.level, z.x, z.z, tx, tz); z.pi2 = 0; z.goal = { x: tx, z: tz }; z.repath = 0.5;
+// The way from a zombie to (tx, tz), which is at `to` (placeOf): path finding over the ground, and up or down a tower by its route (level.js TOWER.route: the stair's foot,
+// its first tread and its top on the deck), so that a zombie follows a player up a stair and onto a deck, and back down.
+function route(L, z, tx, tz, to) {
+  const from = placeOf(L, z.x, z.z, z.y), at = (k, p) => routePoint(L.towers[k], L.tower.route[p]);
+  if (from < 0 && to < 0) return findPath(L, z.x, z.z, tx, tz);
+  const way = [];
+  if (from >= 0 && to >= 0 && from >> 1 === to >> 1) { // on the same tower: by the stair's top when one of the two is on the deck and the other on the stair
+    if ((from ^ to) & 1) way.push(at(to >> 1, 'top'));
+    way.push([tx, tz]);
+    return way;
+  }
+  let ax = z.x, az = z.z;
+  if (from >= 0) { // down its stair first
+    if (from & 1) way.push(at(from >> 1, 'top'));
+    way.push(at(from >> 1, 'bottom'), at(from >> 1, 'foot'));
+    [ax, az] = at(from >> 1, 'foot');
+  }
+  if (to < 0) return way.concat(findPath(L, ax, az, tx, tz) || []);
+  const [fx, fz] = at(to >> 1, 'foot');
+  way.push(...(findPath(L, ax, az, fx, fz) || []), at(to >> 1, 'bottom'));
+  if (to & 1) way.push(at(to >> 1, 'top'));
+  way.push([tx, tz]);
+  return way;
+}
+// ty: how high the goal is (a player seen or heard up a tower), or undefined for a place on the ground.
+function goTo(S, z, tx, tz, speed, dt, ty) {
+  const to = placeOf(S.level, tx, tz, ty);
+  if ((!z.goal || hyp(z.goal.x - tx, z.goal.z - tz) > 1.5 || z.goal.to !== to) && z.repath <= 0) {
+    z.path = route(S.level, z, tx, tz, to); z.pi2 = 0; z.goal = { x: tx, z: tz, to }; z.repath = 0.5;
   }
   let wx = tx, wz = tz;
   if (z.path && z.pi2 < z.path.length) {
@@ -588,7 +710,7 @@ function stepZombie(S, z, dt) {
         let gain = A.sightGain * (rp.gain || 1) * ex * (1 - d / range) * dt * z.sens;
         if (d < A.close) gain += dt * 3;
         z.meter = Math.min(1, z.meter + gain);
-        z.lkp = { x: P.x, z: P.z }; z.seenT = S.t; z.lastStim = S.t; z.stim = z.lkp;
+        z.lkp = { x: P.x, z: P.z, y: P.y }; z.seenT = S.t; z.lastStim = S.t; z.stim = z.lkp;
       }
     }
   }
@@ -615,7 +737,7 @@ function stepZombie(S, z, dt) {
         z.yaw = turn(z.yaw, Math.atan2(z.point.x - z.x, z.point.z - z.z), 6 * dt); z.timer += dt;
         if (z.timer > Z.suspiciousWait) idleEnter(S, z);
       } else {
-        goTo(S, z, z.point.x, z.point.z, Z.walk, dt); z.leg += dt;
+        goTo(S, z, z.point.x, z.point.z, Z.walk, dt, z.point.y); z.leg += dt;
         // At the end of a path that stops short of the spot (the noise was inside a wall or on sealed ground), it cannot get closer: it searches from here.
         const end = z.path && z.path.length ? z.path[z.path.length - 1] : null, blocked = end && hyp(end[0] - z.x, end[1] - z.z) < 1 && hyp(end[0] - z.point.x, end[1] - z.point.z) > 1.5;
         // there, or close to it with another investigator already on top of it (so a crowd does not stack up): search the area round the noise
@@ -625,14 +747,14 @@ function stepZombie(S, z, dt) {
       }
       break;
     case 'alert': {
-      const tgt = sees ? { x: P.x, z: P.z } : z.lkp || { x: P.x, z: P.z };
+      const tgt = sees ? { x: P.x, z: P.z, y: P.y } : z.lkp || { x: P.x, z: P.z, y: P.y };
       const dP = hyp(P.x - z.x, P.z - z.z);
       if (z.role === 'scout') {
         z.yaw = turn(z.yaw, Math.atan2(tgt.x - z.x, tgt.z - z.z), 6 * dt);
         z.report -= dt;
         if (sees && z.report <= 0) { // keeps reporting while it can see you, with where you are NOW, so the others follow you
           z.report = Z.scoutReport;
-          scoutCall(S, z, { x: P.x, z: P.z });
+          scoutCall(S, z, { x: P.x, z: P.z, y: P.y });
         }
         if (!sees && S.t - z.seenT > Z.loseTime) cautionEnter(S, z);
         break;
@@ -640,7 +762,7 @@ function stepZombie(S, z, dt) {
       if (dP < Z.attackRange && Math.abs(P.y - z.y) < 1.2 && sees) {
         z.yaw = turn(z.yaw, Math.atan2(P.x - z.x, P.z - z.z), 10 * dt);
         if (z.atk <= 0) attack(S, z);
-      } else goTo(S, z, tgt.x, tgt.z, Z.run, dt);
+      } else goTo(S, z, tgt.x, tgt.z, Z.run, dt, tgt.y);
       const lost = !sees && S.t - z.seenT > Z.loseTime;
       if (lost && (arrivedAt(z, tgt.x, tgt.z, 2) || S.t - z.seenT > Z.loseTime + 6)) searchEnter(S, z);
       break;
@@ -648,7 +770,7 @@ function stepZombie(S, z, dt) {
     case 'search':
       z.timer -= dt; z.leg += dt;
       if (!z.arrived) {
-        goTo(S, z, z.point.x, z.point.z, Z.walk, dt);
+        goTo(S, z, z.point.x, z.point.z, Z.walk, dt, z.point.y);
         if (arrivedAt(z, z.point.x, z.point.z, 1.5) || z.leg > 25) { z.arrived = true; z.wait = between(S, Z.wait); } // 25 s: a point it cannot reach is given up
       } else {
         z.wait -= dt; z.yaw += 1.2 * dt;
@@ -668,11 +790,13 @@ function separate(S) {
     if (Z[i].state === 'dead') continue;
     for (let j = i + 1; j < Z.length; j++) {
       if (Z[j].state === 'dead' || Z[i].role === 'scout' || Z[j].role === 'scout') continue; // a scout is a fixed post (often high above whoever stands under it)
+      if (Math.abs(Z[j].y - Z[i].y) >= TUNING.player.height) continue; // one on a deck and one under it are not in each other's way
       const dx = Z[j].x - Z[i].x, dz = Z[j].z - Z[i].z, d = hyp(dx, dz);
       if (d > 0 && d < 0.55) {
         const k = (0.55 - d) / 2 / d;
         moveBy(S.level, Z[i], -dx * k, -dz * k, TUNING.zombie.radius, TUNING.player.step);
         moveBy(S.level, Z[j], dx * k, dz * k, TUNING.zombie.radius, TUNING.player.step);
+        for (const o of [Z[i], Z[j]]) { const f = floorAt(S.level, o.x, o.z, o.y); if (o.y - f > TUNING.player.step) o.y = f; } // shoved off a stair or a deck's open edge: down
       }
     }
   }
@@ -708,7 +832,7 @@ export function fireArrow(S, aim, f, kind, from = null) {
   const sp = B.speed * (0.5 + 0.5 * f), o = from || [P.x, eyeY(P) - 0.2, P.z];
   const a = {
     id: S.nextId++, kind, state: 'fly', x: o[0] + dx * 0.4, y: o[1] + dy * 0.4, z: o[2] + dz * 0.4, vx: dx * sp, vy: dy * sp, vz: dz * sp,
-    dir: [dx, dy, dz], origin: { x: P.x, z: P.z }, age: 0, whistle: 0, tag: null,
+    dir: [dx, dy, dz], origin: { x: P.x, z: P.z, y: P.y }, age: 0, whistle: 0, tag: null,
   };
   S.arrows.push(a);
   S.stats.shots++;
@@ -745,7 +869,7 @@ function bodyHit(S, z, from, dir, part, how, harm = 1) {
   if (z.hp <= 0) { kill(S, z, how, dir, part); return true; }
   S.stats.messy++;
   S.events.push({ type: 'wound', id: z.id });
-  z.lkp = { x: from.x, z: from.z }; z.stim = z.lkp; z.seenT = S.t;
+  z.lkp = { x: from.x, z: from.z, y: from.y }; z.stim = z.lkp; z.seenT = S.t;
   alertEnter(S, z);
   emitNoise(S, z.x, z.y + 1.2, z.z, TUNING.loud.wound, 'wound', 'zombie', z.id); // the scream
   return false;
@@ -928,9 +1052,9 @@ function stepPlayer(S, inp, dt) {
     moveBy(L, P, (inp.mx / m) * speed * dt, (inp.mz / m) * speed * dt, T.player.radius, T.player.step);
     P.stride += speed * dt;
     const stride = P.run ? 2.2 : P.crouch ? 1.2 : 1.6;
-    if (P.stride >= stride) { P.stride = 0; playerNoise(S, P.run ? T.loud.stepRun : P.crouch ? T.loud.stepCrouch : T.loud.stepWalk, 'step', surfaceTag(L, P.x, P.z)); }
+    if (P.stride >= stride) { P.stride = 0; playerNoise(S, P.run ? T.loud.stepRun : P.crouch ? T.loud.stepCrouch : T.loud.stepWalk, 'step', tagAt(L, P.x, P.z, P.y)); }
   }
-  const g = heightAt(L, P.x, P.z);
+  const g = floorAt(L, P.x, P.z, P.y);
   if (isFinite(g)) {
     if (P.y < g || (!P.falling && P.y - g <= T.player.step)) P.y = g; // stepped up, or down a slope or a step
     else if (P.y > g + 0.001) {
@@ -939,7 +1063,7 @@ function stepPlayer(S, inp, dt) {
       if (P.y <= g) {
         P.y = g; P.falling = false; P.vy = 0;
         const drop = P.fallFrom - g;
-        if (drop > 0.8) playerNoise(S, Math.min(1, T.loud.landPerM * drop), 'land', surfaceTag(L, P.x, P.z));
+        if (drop > 0.8) playerNoise(S, Math.min(1, T.loud.landPerM * drop), 'land', tagAt(L, P.x, P.z, P.y));
       }
     }
   }

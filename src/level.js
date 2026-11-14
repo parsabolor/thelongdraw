@@ -19,14 +19,48 @@ export function terrainHeight(x, z) {
   const g = (i, j) => grid[j * N + i];
   return (g(a, b) * (1 - u) + g(a + 1, b) * u) * (1 - v) + (g(a, b + 1) * (1 - u) + g(a + 1, b + 1) * u) * v;
 }
-// ---------- the scouts' towers: the ground under each is levelled ----------
-// Each scout stands on the deck of a lookout tower (assets/models/game/hut.fbx: a small wooden tower with a plank deck, drawn `scale` times its size). The model's posts have
-// a fixed length, so on a slope they would hang in the air on one side and a body would walk into the deck on the other: the 1 m height grid is blended toward the tower's
-// base height, level within `flat` metres and back to the hillside over `blend` more (terrainHeight, terrainSurface and the drawn ground all read this one grid).
-// deck: the planks' height above the feet; half: half the deck's width. Both measured on the model as three.js loads it (rays down onto the placed tower: planks at
-// 3.02 to 3.33 m, 3.25 m under the scout, about 2.6 m across, roof top at 5 to 6 m). The proportions the model has in Blender are not the ones its FBX loads with.
-export const TOWER = { scale: 3.6, deck: 3.25, half: 1.5, flat: 3.2, blend: 6 };
+// ---------- the scouts' lookout towers ----------
+// Each scout stands on the deck of a lookout tower (assets/models/game/hut.fbx: a small wooden tower with a plank deck, a stair up to it and a palisade beside it, drawn `scale`
+// times its size, its deck raised to `deck` m over its feet; main.js draws it as the engine does). The model's posts have a fixed length, so on a slope they would hang in the air on
+// one side and a body would walk into the deck on the other: the 1 m height grid is blended toward the tower's base height, level within `flat` metres and back to the hillside
+// over `blend` more (terrainHeight, terrainSurface and the drawn ground all read this one grid). Beyond that (the stair's foot, the palisade's end) the drawing lets its bottom down
+// to the ground where the ground falls below the base: every height under `foot` m is lowered toward it, fully at 0 and not at all at `foot` (sim.js does the same to the parts).
+// parts: the tower's solid parts as the rules meet them (sim.js towerTop, towerBlocks, rayTowers), measured on the drawn model (the engine's test holds them to its mesh). Each is a
+// box in the tower's own frame: u along the stair (up it is +u, the deck's middle is 0), v across, y metres over the base, lo -1 for one that stands on the ground; `slope` (rise
+// per metre of u) tilts both its faces from their heights at u[0] (the stair and the roof's two sides). mode as for the level's boxes: 'sight' blocks rays only, 'body' bodies only, none both.
+//   deck: the planks (top 3.25, where the scout stands) from where the stair meets it to the far rail. stair: a ramp through the tops of its eight treads (0.375 m rise, 0.42 m
+//   run: the body climbs it smoothly, its feet within 0.17 m of a tread), 0.35 m thick. fence: the palisade on the -v side, 3 m tall; for bodies taller (3.8 m) than any
+//   floor a step from it, so that nobody steps onto its top from the upper stair and over it (every part's top is a floor: the deck's, the stair's). rails: a single bar round
+//   three sides of the deck, 0.55 to 0.9 m over it, open where the stair comes up (the corner posts leave no room beside the stair's head to step off): a body on the deck cannot pass
+//   it ('body', deck to bar top), a ray only meets the bar ('sight'). Under the deck: barred on the +u side and along the bottom of the stair side; open on the +v side
+//   under a bar at 1.91 m, between the struts that lean on its posts, so a body walks in there.
+// route: three points on the stair's axis that zombies climb by (sim.js goTo): `foot` on the ground before it, `bottom` on its first tread, `top` on the deck.
+// watch: where the scout stands, at the rail on the side that faces the fort, 0.4 m from it, on a plank (from the deck's middle the rail, the posts and the roof hid the yard of the fort from
+// the plateau's scout: a lookout leans on the rail).
+// turn: the model's own turn in its frame, so a tower's frame is turned by its yaw plus this (TOWERS carry its cosine and sine: the rules use no trigonometry of their own).
+export const TOWER = {
+  scale: 3.6, deck: 3.25, flat: 3.2, blend: 6, foot: 1, turn: 0.4451,
+  parts: [
+    { u: [-1.51, 1.36], v: [-1.36, 1.36], y: [2.98, 3.25] }, // deck
+    { u: [-6.0, -1.51], v: [-0.8, 1.03], y: [-1.076, -0.726], slope: 0.8856 }, // stair (3.25 at its top end)
+    { u: [-6.45, -1.4], v: [-1.44, -1.11], y: [-1, 3], mode: 'sight' }, { u: [-0.03, 0.76], v: [-1.38, -1.33], y: [-1, 2.9], mode: 'sight' }, // fence, and its pickets under the deck
+    { u: [-6.45, 1.45], v: [-1.44, -1.11], y: [-1, 3.8], mode: 'body' }, // (with the bars under the deck on that side)
+    { u: [-1.4, -1.1], v: [-1.44, -1.13], y: [-1, 5.68] }, { u: [1.14, 1.45], v: [-1.41, -1.11], y: [-1, 5.68] }, // posts
+    { u: [-1.43, -1.12], v: [1.1, 1.4], y: [-1, 5.68] }, { u: [1.12, 1.43], v: [1.11, 1.42], y: [-1, 5.68] },
+    { u: [1.21, 1.36], v: [-1.2, 1.2], y: [3.25, 4.17], mode: 'body' }, { u: [1.21, 1.36], v: [-1.2, 1.2], y: [4.01, 4.17], mode: 'sight' }, // rail, +u
+    { u: [-1.2, 1.2], v: [1.16, 1.32], y: [3.25, 4.06], mode: 'body' }, { u: [-1.2, 1.2], v: [1.16, 1.32], y: [3.8, 4.06], mode: 'sight' }, // rail, +v
+    { u: [-1.2, 1.2], v: [-1.35, -1.2], y: [3.25, 4], mode: 'body' }, { u: [-1.2, 1.2], v: [-1.35, -1.2], y: [3.85, 4], mode: 'sight' }, // rail, -v
+    { u: [1.21, 1.37], v: [-1.2, 1.2], y: [0.27, 2.7], mode: 'body' }, // bars under the deck, +u
+    { u: [-1.34, -1.19], v: [-1.19, 1.18], y: [0.67, 0.93] }, // a bar under the deck, stair side
+    { u: [-1.19, 1.19], v: [1.16, 1.32], y: [1.91, 2.18] }, // the bar over the way in under the deck, +v
+    { u: [-1.4, -1.17], v: [1.42, 2.2], y: [-1, 2], mode: 'body' }, { u: [1.16, 1.39], v: [1.42, 2.2], y: [-1, 2], mode: 'body' }, // the struts leaning on the +v posts
+    { u: [-1.75, 0], v: [-1.49, 1.48], y: [5.55, 5.69], slope: 0.61, mode: 'sight' }, { u: [0, 1.8], v: [-1.49, 1.48], y: [6.62, 6.76], slope: -0.61, mode: 'sight' }, // roof
+  ],
+  route: { foot: [-6, 0.12], bottom: [-5, 0.12], top: [-0.9, 0.12] },
+  watch: [-0.2, 0.78],
+};
 export const TOWERS = [[26, 44], [30, -4], [17, -50]].map(([x, z]) => ({ x, z, base: terrainHeight(x, z), yaw: Math.atan2(-x, -z) })); // yaw: looking at the fort
+for (const t of TOWERS) { t.c = Math.cos(t.yaw + TOWER.turn); t.s = Math.sin(t.yaw + TOWER.turn); } // the frame: world = (x, base, z) + (c u + s v, y, c v - s u)
 for (const t of TOWERS) {
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const d = Math.hypot(LO + i * WORLD.step - t.x, LO + j * WORLD.step - t.z); if (d > TOWER.flat + TOWER.blend) continue;
@@ -119,9 +153,6 @@ const boxes = [];
 for (const [x0, x1, z0, z1, y0, y1] of SIGHT_BOXES) boxes.push({ x0, x1, z0, z1, y0, y1, tag: 'rock', mode: 'sight' });
 for (const [x0, x1, z0, z1, y1] of BODY_BOXES) boxes.push({ x0, x1, z0, z1, y0: 0, y1, tag: 'rock', mode: 'body', skin: 'outpost' });
 boxes.push({ x0: 4.5, x1: 5.5, z0: 8, z1: 9, y0: 0, y1: 3, tag: 'metal' }); // the bell post on the pad in front of the door
-// The scouts' decks, for rays only (a body walks under a lookout tower between its posts): the scout stands on it and cannot see through it, and an arrow from right
-// underneath cannot reach it. Rays from far away pass above the deck's edge to the scout standing in the middle.
-for (const t of TOWERS) boxes.push({ x0: t.x - TOWER.half, x1: t.x + TOWER.half, z0: t.z - TOWER.half, z1: t.z + TOWER.half, y0: t.base + TOWER.deck - 0.15, y1: t.base + TOWER.deck, tag: 'wood', mode: 'sight' });
 
 // ---------- anchors: where things start (tuned against the reachable ground, see test/sim.test.mjs) ----------
 // The player starts in the low south-west valley (about 11 m below the pad) and climbs north-east to the fort. Three scouts hold vantage points
@@ -136,7 +167,7 @@ const toward = ([x, z], [tx, tz]) => Math.atan2(tx - x, tz - z); // the yaw that
 const STOP_A = [-5.5, 21.5], STOP_B = [4.5, 19.5], GATE = [1.4, 12]; // (the gate's middle: FORT, x 0.36 to 2.44 at z 12)
 const ARMORED = { role: 'armored', x: STOP_A[0], z: STOP_A[1], yaw: toward(STOP_A, [BIKE.x, BIKE.z]), patrol: [STOP_A, STOP_B], face: [toward(STOP_A, [BIKE.x, BIKE.z]), toward(STOP_B, GATE)] };
 const SPAWNS = [
-  ...TOWERS.map((t) => ({ role: 'scout', x: t.x, z: t.z, y: t.base + TOWER.deck, yaw: t.yaw })), // south-east plateau, east rim over the pad, north ridge
+  ...TOWERS.map((t) => { const [u, v] = TOWER.watch; return { role: 'scout', x: t.x + t.c * u + t.s * v, z: t.z - t.s * u + t.c * v, y: t.base + TOWER.deck, yaw: t.yaw }; }), // south-east plateau, east rim over the pad, north ridge
   { role: 'hunter', x: -25, z: 16, yaw: 0, patrol: [[-25, 16], [-14, 22], [-16, 6], [-31, 17]] },   // the valley, first contact
   { role: 'hunter', x: -10, z: 13.5, yaw: 0, patrol: [[-10, 13.5], [-16, 6], [-14, 0], [-14, 13]] }, // west of the fort (outside its wall)
   { role: 'hunter', x: 13, z: 12, yaw: 0, patrol: [[13, 12], [8, 14], [4, 13.5], [13.5, 6]] },      // at the foot of the escarpment, round the south-east tower
@@ -179,5 +210,18 @@ export const LEVEL = {
   patrol: [[-10, 13.5], [10, 13.5], [-14, 0], [14, -4], [0, -14], [-12, -14], [12, -12], [0, 14], [-16, 6], [8, -8]],
   spawns: SPAWNS,
   walls: WALLS, // drawn only (the shell has their solid parts): the fortress round the outpost, see FORT
+  tower: TOWER, // the lookout towers: their solid parts and the stair zombies climb by, and where each stands (TOWER and TOWERS above)
+  towers: TOWERS,
 };
 LEVEL.props = scatter(11, [[START.x, START.z, 6], [BIKE.x, BIKE.z, 4], ...TOWERS.map((t) => [t.x, t.z, TOWER.flat + 1]), ...SPAWNS.flatMap((s) => [[s.x, s.z, 3], ...(s.patrol || []).map(([x, z]) => [x, z, 2.5])]), ...LEVEL.patrol.map(([x, z]) => [x, z, 2.5])]);
+// The scatter knows the towers only as circles round their middles: a boulder or trunk it put in the way of a tower's stair or palisade (one rock, on the east tower's stair)
+// is moved the least way clear of the part it is in, as a square of its radius and a cell more (the rules block the whole 1 m cells a prop touches), so the stair can be
+// climbed. The others keep their places, and every prop its place in the list.
+for (const p of LEVEL.props) for (const t of TOWERS) for (const q of TOWER.parts) {
+  if (q.mode === 'sight') continue;
+  const dx = p.x - t.x, dz = p.z - t.z, u = t.c * dx - t.s * dz, v = t.s * dx + t.c * dz, r = p.r + 1;
+  const ways = [[q.u[0] - r - u, 0], [q.u[1] + r - u, 0], [0, q.v[0] - r - v], [0, q.v[1] + r - v]]; // to clear it along -u, +u, -v, +v
+  if (ways[0][0] >= 0 || ways[1][0] <= 0 || ways[2][1] >= 0 || ways[3][1] <= 0) continue; // clear of it already
+  const [mu, mv] = ways.reduce((a, b) => (Math.abs(b[0] + b[1]) < Math.abs(a[0] + a[1]) ? b : a));
+  p.x += t.c * mu + t.s * mv; p.z += t.c * mv - t.s * mu;
+}

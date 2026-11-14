@@ -206,7 +206,7 @@ test('the armored zombie: an arrow in his chest or hips rings off his vest, unhu
       const S = shoot(aimY), z = S.zombies[0], a = S.arrows[0];
       assert.equal(z.hp, TUNING.zombie.hp, `a ${part} shot does him no harm`);
       assert.equal(z.state, 'alert', 'but he hunts');
-      assert.deepEqual(z.lkp, { x: 0, z: 0 }, 'where the shot came from');
+      assert.deepEqual(z.lkp, { x: 0, z: 0, y: 0 }, 'where the shot came from (and how high: a shot from up a tower is followed up it)');
       assert.ok(Math.cos(z.yaw - Math.PI) > 0.5, `and turns toward it: yaw ${z.yaw.toFixed(2)}`);
       assert.deepEqual([a.state, a.tag, a.zid, a.part], ['stuck', 'metal', z.id, part], 'the arrow stays in his vest, and rang as metal');
       assert.ok(S.events.some((e) => e.type === 'noise' && e.kind === 'impact' && e.tag === 'metal' && e.loud === TUNING.loud.metal), 'a hard impact\'s noise');
